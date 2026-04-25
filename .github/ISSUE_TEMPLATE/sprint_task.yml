@@ -1,0 +1,64 @@
+name: Sprint Task
+description: 기획, 개발, 디자인, QA를 함께 거치는 작업 카드를 만듭니다.
+title: "[Sprint] "
+labels:
+  - sprint
+body:
+  - type: textarea
+    id: goal
+    attributes:
+      label: 목표
+      description: 이번 카드의 사용자 관점 목표를 한 문장으로 적어주세요.
+      placeholder: 예) 사용자가 로컬 pipeline 파일을 열고 바로 topology를 확인할 수 있게 한다.
+    validations:
+      required: true
+  - type: textarea
+    id: scope
+    attributes:
+      label: In Scope
+      placeholder: |
+        - 로컬 파일 열기
+        - 파싱 상태 표시
+        - 캔버스 렌더링
+    validations:
+      required: true
+  - type: textarea
+    id: out_of_scope
+    attributes:
+      label: Out Of Scope
+      placeholder: |
+        - 원격 접속
+        - Export
+        - Packaging
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance Criteria
+      placeholder: |
+        - [ ] ...
+        - [ ] ...
+    validations:
+      required: true
+  - type: textarea
+    id: design
+    attributes:
+      label: Design Notes
+      description: UI/UX, 카피, 정보구조 기준을 적어주세요.
+  - type: textarea
+    id: qa
+    attributes:
+      label: QA Plan
+      placeholder: |
+        - [ ] npm run lint
+        - [ ] npm run build
+        - [ ] cargo test
+        - [ ] 수동 happy path 확인
+    validations:
+      required: true
+  - type: textarea
+    id: risks
+    attributes:
+      label: Risks / Blockers
+      description: 막힐 수 있는 점이나 외부 입력이 필요한 부분을 적어주세요.

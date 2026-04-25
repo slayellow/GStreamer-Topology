@@ -1,0 +1,5 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Project workflow
+    url: https://github.com/slayellow/GStreamer-Topology/blob/main/docs/GITHUB_PROJECTS.md
+    about: Read the sprint board and issue workflow before creating large work items.

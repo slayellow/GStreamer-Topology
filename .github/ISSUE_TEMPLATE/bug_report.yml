@@ -1,0 +1,71 @@
+name: Bug Report
+description: 재현 가능한 결함을 등록합니다.
+title: "[Bug] "
+labels:
+  - bug
+body:
+  - type: textarea
+    id: summary
+    attributes:
+      label: 요약
+      description: 어떤 문제가 발생했나요?
+      placeholder: 예) .pld 파일을 열면 캔버스가 비어 있습니다.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: 재현 절차
+      description: 문제를 재현하는 순서를 적어주세요.
+      placeholder: |
+        1. 앱 실행
+        2. 로컬 파이프라인 열기
+        3. fixtures/pipelines/01_videotestsrc_linear.pld 선택
+        4. 캔버스 확인
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: 기대 결과
+      placeholder: 예) 노드와 엣지가 캔버스에 표시되어야 합니다.
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: 실제 결과
+      placeholder: 예) 화면은 전환되지만 그래프가 표시되지 않습니다.
+    validations:
+      required: true
+  - type: textarea
+    id: input
+    attributes:
+      label: 사용한 입력
+      description: 사용한 파일명, pipeline text, 또는 테스트 데이터를 적어주세요.
+      placeholder: fixtures/pipelines/01_videotestsrc_linear.pld
+  - type: dropdown
+    id: severity
+    attributes:
+      label: 심각도
+      options:
+        - Blocker
+        - High
+        - Medium
+        - Low
+      default: 2
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: 환경
+      placeholder: |
+        OS:
+        실행 명령:
+        앱 버전 또는 commit:
+  - type: textarea
+    id: evidence
+    attributes:
+      label: 증거 자료
+      description: 스크린샷, 로그, 에러 문구가 있으면 붙여주세요.

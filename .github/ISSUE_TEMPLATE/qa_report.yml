@@ -1,0 +1,47 @@
+name: QA Report
+description: 기능 검증 결과와 결함 후보를 남깁니다.
+title: "[QA] "
+labels:
+  - qa
+body:
+  - type: textarea
+    id: target
+    attributes:
+      label: 테스트 대상
+      description: 테스트한 기능, issue, branch, commit을 적어주세요.
+      placeholder: 예) Local pipeline import, commit abc1234
+    validations:
+      required: true
+  - type: textarea
+    id: checklist
+    attributes:
+      label: 체크리스트
+      placeholder: |
+        - [ ] 앱 실행
+        - [ ] 로컬 파일 열기
+        - [ ] 노드 클릭
+        - [ ] 진단 패널 확인
+    validations:
+      required: true
+  - type: textarea
+    id: verified
+    attributes:
+      label: 통과한 항목
+      placeholder: 어떤 항목이 정상 동작했나요?
+    validations:
+      required: true
+  - type: textarea
+    id: failed
+    attributes:
+      label: 실패한 항목
+      placeholder: 실패한 항목, 재현 절차, 실제 결과를 적어주세요.
+  - type: textarea
+    id: unverified
+    attributes:
+      label: 미검증 항목
+      placeholder: 환경이나 시간 때문에 확인하지 못한 범위를 적어주세요.
+  - type: textarea
+    id: evidence
+    attributes:
+      label: 증거 자료
+      description: 스크린샷, 로그, 영상, 에러 문구가 있으면 붙여주세요.
