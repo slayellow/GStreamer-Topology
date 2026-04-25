@@ -1,0 +1,93 @@
+:root {
+  color: var(--text-primary);
+  background:
+    radial-gradient(circle at top left, rgba(63, 145, 255, 0.18), transparent 30%),
+    radial-gradient(circle at right 20%, rgba(42, 203, 210, 0.12), transparent 26%),
+    linear-gradient(180deg, #eaf1f9 0%, #dee7f1 100%);
+  font-family: 'Aptos', 'Segoe UI', sans-serif;
+  font-size: 16px;
+  font-synthesis: none;
+  line-height: 1.5;
+  text-rendering: optimizeLegibility;
+  -moz-osx-font-smoothing: grayscale;
+  -webkit-font-smoothing: antialiased;
+
+  --canvas-backdrop: #edf3fa;
+  --canvas-dot: rgba(69, 117, 173, 0.21);
+  --canvas-grid: rgba(61, 93, 132, 0.08);
+  --ink-strong: #0f1b2b;
+  --surface-base: rgba(243, 248, 253, 0.82);
+  --surface-soft: rgba(240, 246, 251, 0.72);
+  --surface-raised: rgba(250, 253, 255, 0.94);
+  --stroke-soft: rgba(31, 58, 92, 0.12);
+  --stroke-strong: rgba(31, 58, 92, 0.22);
+  --shadow-soft: 0 20px 42px rgba(11, 24, 40, 0.1);
+  --shadow-strong: 0 28px 72px rgba(11, 24, 40, 0.16);
+  --text-primary: #1d2c3d;
+  --text-soft: #596b81;
+  --text-muted: #74849a;
+  --accent-primary: #158dff;
+  --accent-primary-soft: rgba(21, 141, 255, 0.12);
+  --accent-secondary: #2ec9d1;
+  --success-soft: #dcf7f0;
+  --warning-soft: #ffe8c9;
+  --danger-soft: #ffd8d4;
+  --tone-source: #d9ebff;
+  --tone-branch: #dfe7ff;
+  --tone-merge: #def4ef;
+  --tone-ai: #d9f7f7;
+  --tone-output: #e6eef7;
+  --tone-utility: #e8ebff;
+  --tone-unknown: #e7edf4;
+  --edge-muted: #8ca1b9;
+  --edge-active: #158dff;
+  --minimap-node: rgba(21, 141, 255, 0.72);
+  --font-display: 'Avenir Next Condensed', 'Avenir Next', 'Trebuchet MS', sans-serif;
+  --font-body: 'Aptos', 'Segoe UI', sans-serif;
+  --font-mono: 'JetBrains Mono', 'SFMono-Regular', monospace;
+  color-scheme: light;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  min-height: 100svh;
+}
+
+body {
+  margin: 0;
+  background: var(--canvas-backdrop);
+}
+
+button,
+input,
+textarea {
+  font: inherit;
+}
+
+button {
+  cursor: pointer;
+}
+
+h1,
+h2,
+h3,
+p,
+pre,
+ul {
+  margin: 0;
+}
+
+ul {
+  list-style: none;
+  padding: 0;
+}
+
+code,
+pre {
+  font-family: var(--font-mono);
+}

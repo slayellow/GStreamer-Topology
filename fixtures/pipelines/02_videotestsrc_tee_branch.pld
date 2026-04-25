@@ -1,0 +1,1 @@
+videotestsrc pattern=zone-plate ! tee name=t t. ! queue ! videoconvert ! autovideosink t. ! queue ! fakesink sync=false

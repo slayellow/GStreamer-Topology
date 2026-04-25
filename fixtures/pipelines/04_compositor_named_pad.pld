@@ -1,0 +1,1 @@
+compositor name=mix sink_1::alpha=0.7 ! videoconvert ! autovideosink videotestsrc pattern=smpte ! videoconvert ! mix. videotestsrc pattern=ball ! videoconvert ! mix.sink_1

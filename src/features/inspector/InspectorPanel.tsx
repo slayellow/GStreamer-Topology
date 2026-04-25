@@ -1,0 +1,192 @@
+import type {
+  PipelineDiagnostic,
+  PipelineDocumentViewModel,
+  PipelineNodeViewModel,
+  PipelineProperty,
+} from '../../graph/types.ts'
+
+type InspectorPanelProps = {
+  document: PipelineDocumentViewModel
+  selectedNode: PipelineNodeViewModel | null
+}
+
+type ConnectionSummary = {
+  incoming: PipelineNodeViewModel[]
+  outgoing: PipelineNodeViewModel[]
+}
+
+function diagnosticSeverityLabel(severity: PipelineDiagnostic['severity']) {
+  switch (severity) {
+    case 'info':
+      return '정보'
+    case 'warning':
+      return '경고'
+    case 'error':
+      return '오류'
+  }
+}
+
+function nodeKindLabel(kind: PipelineNodeViewModel['kind']) {
+  switch (kind) {
+    case 'element':
+      return '요소'
+    case 'virtual_group':
+      return '가상 그룹'
+    case 'caps':
+      return '캡스'
+    case 'unknown':
+      return '알 수 없음'
+  }
+}
+
+function findConnections(
+  document: PipelineDocumentViewModel,
+  node: PipelineNodeViewModel,
+): ConnectionSummary {
+  const incomingIds = document.graph.edges
+    .filter((edge) => edge.targetNodeId === node.id)
+    .map((edge) => edge.sourceNodeId)
+  const outgoingIds = document.graph.edges
+    .filter((edge) => edge.sourceNodeId === node.id)
+    .map((edge) => edge.targetNodeId)
+
+  return {
+    incoming: document.graph.nodes.filter((candidate) =>
+      incomingIds.includes(candidate.id),
+    ),
+    outgoing: document.graph.nodes.filter((candidate) =>
+      outgoingIds.includes(candidate.id),
+    ),
+  }
+}
+
+function renderProperty(property: PipelineProperty) {
+  return (
+    <li key={`${property.key}-${property.value}`}>
+      <span>{property.key}</span>
+      <code>{property.value}</code>
+    </li>
+  )
+}
+
+function renderDiagnostic(diagnostic: PipelineDiagnostic) {
+  return (
+    <li key={diagnostic.id} className={`inspector-diagnostic severity-${diagnostic.severity}`}>
+      <span>{diagnosticSeverityLabel(diagnostic.severity)}</span>
+      <p>{diagnostic.message}</p>
+    </li>
+  )
+}
+
+function InspectorPanel({ document, selectedNode }: InspectorPanelProps) {
+  if (!selectedNode) {
+    return (
+      <aside className="workspace-panel inspector-panel">
+        <div className="section-heading">
+          <div className="eyebrow">인스펙터</div>
+          <h2>캔버스에서 노드를 선택하세요</h2>
+        </div>
+        <p className="muted-copy">
+          토폴로지에서 요소를 선택하면 속성, 연결, 경고, 원본 위치를 확인할 수
+          있습니다.
+        </p>
+        <div className="inspector-empty-state">
+          <span className="card-chip">선택 대기 중</span>
+          <p>노드 세부 정보, 링크, 경고, 원본 범위 정보가 여기에 표시됩니다.</p>
+        </div>
+      </aside>
+    )
+  }
+
+  const connections = findConnections(document, selectedNode)
+
+  return (
+    <aside className="workspace-panel inspector-panel">
+      <div className="section-heading">
+        <div className="eyebrow">인스펙터</div>
+        <h2>{selectedNode.instanceName || selectedNode.factoryName}</h2>
+      </div>
+
+      <div className="inspector-card">
+        <div className="inspector-card__header">
+          <span className={`card-chip tone-${selectedNode.tone}`}>
+            {nodeKindLabel(selectedNode.kind)}
+          </span>
+          <span className="card-chip">{selectedNode.factoryName}</span>
+        </div>
+        <p>{selectedNode.description}</p>
+      </div>
+
+      <section className="inspector-section">
+        <h3>원본 범위</h3>
+        {selectedNode.sourceSpan ? (
+          <p>
+            줄 {selectedNode.sourceSpan.lineStart}-{selectedNode.sourceSpan.lineEnd}
+          </p>
+        ) : (
+          <p className="muted-copy">이 노드에는 원본 줄 매핑이 없습니다.</p>
+        )}
+      </section>
+
+      <section className="inspector-section">
+        <h3>속성</h3>
+        {selectedNode.properties.length ? (
+          <ul className="inspector-property-list">
+            {selectedNode.properties.map(renderProperty)}
+          </ul>
+        ) : (
+          <p className="muted-copy">아직 캡처된 명시적 속성이 없습니다.</p>
+        )}
+      </section>
+
+      <section className="inspector-section">
+        <h3>연결</h3>
+        <div className="inspector-connection-grid">
+          <div>
+            <span className="field-label">상류</span>
+            <ul className="inspector-connection-list">
+              {connections.incoming.length ? (
+                connections.incoming.map((connection) => (
+                  <li key={connection.id}>{connection.instanceName || connection.factoryName}</li>
+                ))
+              ) : (
+                <li className="muted-copy">상류 노드 없음</li>
+              )}
+            </ul>
+          </div>
+          <div>
+            <span className="field-label">하류</span>
+            <ul className="inspector-connection-list">
+              {connections.outgoing.length ? (
+                connections.outgoing.map((connection) => (
+                  <li key={connection.id}>{connection.instanceName || connection.factoryName}</li>
+                ))
+              ) : (
+                <li className="muted-copy">하류 노드 없음</li>
+              )}
+            </ul>
+          </div>
+        </div>
+      </section>
+
+      <section className="inspector-section">
+        <h3>진단</h3>
+        {selectedNode.warnings.length ? (
+          <ul className="inspector-diagnostic-list">
+            {selectedNode.warnings.map((warning, index) =>
+              renderDiagnostic({
+                id: `${selectedNode.id}-${index}`,
+                severity: 'warning',
+                message: warning,
+              }),
+            )}
+          </ul>
+        ) : (
+          <p className="muted-copy">이 선택에는 노드 수준 경고가 없습니다.</p>
+        )}
+      </section>
+    </aside>
+  )
+}
+
+export { InspectorPanel }

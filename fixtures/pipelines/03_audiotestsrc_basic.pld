@@ -1,0 +1,1 @@
+audiotestsrc wave=sine ! audioconvert ! audioresample ! autoaudiosink
