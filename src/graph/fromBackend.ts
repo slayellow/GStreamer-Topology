@@ -18,6 +18,7 @@ import type {
 const elk = new ELK()
 const DEFAULT_NODE_HEIGHT = 118
 const DEFAULT_NODE_WIDTH = 220
+const encoder = new TextEncoder()
 
 function sourceKindLabel(sourceKind: BackendPipelineDocument['source_kind']) {
   switch (sourceKind) {
@@ -98,16 +99,36 @@ function countLineBreaks(text: string, index: number) {
   return line
 }
 
+function byteOffsetToStringIndex(text: string, byteOffset: number) {
+  let bytes = 0
+  let index = 0
+
+  for (const char of text) {
+    const nextBytes = bytes + encoder.encode(char).length
+    if (nextBytes > byteOffset) {
+      return index
+    }
+
+    bytes = nextBytes
+    index += char.length
+  }
+
+  return text.length
+}
+
 function toLineSpan(text: string, span: BackendSourceSpan | undefined | null) {
   if (!span) {
     return undefined
   }
 
+  const startIndex = byteOffsetToStringIndex(text, Math.max(0, span.start))
+  const endIndex = byteOffsetToStringIndex(text, Math.max(span.start, span.end))
+
   return {
     start: span.start,
     end: span.end,
-    lineStart: countLineBreaks(text, span.start),
-    lineEnd: countLineBreaks(text, span.end),
+    lineStart: countLineBreaks(text, startIndex),
+    lineEnd: countLineBreaks(text, endIndex),
   }
 }
 

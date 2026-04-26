@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react'
+import { useLayoutEffect, useRef } from 'react'
 import type {
   PipelineDiagnostic,
   PipelineDocumentViewModel,
@@ -10,10 +10,17 @@ type SourceTextPanelProps = {
   document: PipelineDocumentViewModel
   isOpen: boolean
   selectedNode: PipelineNodeViewModel | null
+  selectionRevision: number
   onToggle: () => void
 }
 
 const encoder = new TextEncoder()
+
+function selectedNodeLabel(node: PipelineNodeViewModel) {
+  return node.instanceName
+    ? `${node.instanceName} (${node.factoryName})`
+    : node.factoryName
+}
 
 function byteOffsetToStringIndex(text: string, byteOffset: number) {
   let bytes = 0
@@ -32,17 +39,31 @@ function byteOffsetToStringIndex(text: string, byteOffset: number) {
   return text.length
 }
 
-function clampSpan(text: string, span?: SourceSpan) {
-  if (!span || typeof span.start !== 'number' || typeof span.end !== 'number') {
+function isFiniteNumber(value: unknown): value is number {
+  return typeof value === 'number' && Number.isFinite(value)
+}
+
+function validSpan(text: string, span?: SourceSpan) {
+  if (!span || !isFiniteNumber(span.start) || !isFiniteNumber(span.end)) {
     return null
   }
 
-  const start = byteOffsetToStringIndex(text, Math.max(0, span.start))
-  const end = byteOffsetToStringIndex(text, Math.max(span.start, span.end))
+  const textByteLength = encoder.encode(text).length
+  if (span.start < 0 || span.start >= span.end || span.end > textByteLength) {
+    return null
+  }
+
+  const start = byteOffsetToStringIndex(text, span.start)
+  const end = byteOffsetToStringIndex(text, span.end)
+  const selected = text.slice(start, end)
+  if (!selected.trim()) {
+    return null
+  }
 
   return {
-    start: Math.min(start, text.length),
-    end: Math.min(Math.max(end, start), text.length),
+    end,
+    selected,
+    start,
   }
 }
 
@@ -54,31 +75,65 @@ function SourceTextPanel({
   document,
   isOpen,
   selectedNode,
+  selectionRevision,
   onToggle,
 }: SourceTextPanelProps) {
   const highlightRef = useRef<HTMLElement | null>(null)
+  const codeScrollRef = useRef<HTMLPreElement | null>(null)
   const text = document.normalizedText
-  const selectedSpan = clampSpan(text, selectedNode?.sourceSpan)
+  const selectedSpan = validSpan(text, selectedNode?.sourceSpan)
   const diagnostics = syntaxDiagnostics(document.diagnostics)
+  const showHighlightFallback = Boolean(selectedNode && !selectedSpan)
 
   const highlightedText = selectedSpan
     ? {
         before: text.slice(0, selectedSpan.start),
-        selected: text.slice(selectedSpan.start, selectedSpan.end),
+        selected: selectedSpan.selected,
         after: text.slice(selectedSpan.end),
       }
     : { before: text, selected: '', after: '' }
 
-  useEffect(() => {
-    if (!isOpen || !highlightRef.current) {
+  useLayoutEffect(() => {
+    if (!isOpen) {
       return
     }
 
-    highlightRef.current.scrollIntoView({
-      block: 'center',
-      behavior: 'smooth',
+    const frameId = window.requestAnimationFrame(() => {
+      const mark = highlightRef.current
+      const scroller = codeScrollRef.current
+      if (!mark || !scroller) {
+        return
+      }
+
+      const markRect = mark.getBoundingClientRect()
+      const scrollerRect = scroller.getBoundingClientRect()
+      const targetTop = scroller.scrollTop
+        + markRect.top
+        - scrollerRect.top
+        - (scroller.clientHeight / 2)
+        + (markRect.height / 2)
+      const targetLeft = scroller.scrollLeft
+        + markRect.left
+        - scrollerRect.left
+        - (scroller.clientWidth / 2)
+        + (markRect.width / 2)
+
+      scroller.scrollTo({
+        left: Math.max(0, targetLeft),
+        top: Math.max(0, targetTop),
+        behavior: 'auto',
+      })
     })
-  }, [isOpen, selectedNode?.id])
+
+    return () => window.cancelAnimationFrame(frameId)
+  }, [
+    document.id,
+    isOpen,
+    selectedNode?.id,
+    selectedSpan?.end,
+    selectedSpan?.start,
+    selectionRevision,
+  ])
 
   return (
     <section className={isOpen ? 'source-panel is-open' : 'source-panel'}>
@@ -87,7 +142,8 @@ function SourceTextPanel({
           <strong>Pipeline 원문</strong>
           {selectedNode?.sourceSpan ? (
             <em>
-              선택 위치: {selectedNode.sourceSpan.lineStart}-{selectedNode.sourceSpan.lineEnd}행
+              선택: {selectedNodeLabel(selectedNode)} · {selectedNode.sourceSpan.lineStart}-
+              {selectedNode.sourceSpan.lineEnd}행
             </em>
           ) : (
             <em>선택한 Element의 원문 위치를 함께 확인합니다.</em>
@@ -105,7 +161,14 @@ function SourceTextPanel({
             </div>
           ) : null}
 
-          <pre className="source-panel__code">
+          {showHighlightFallback ? (
+            <div className="source-panel__alert source-panel__alert--highlight">
+              원문 위치를 찾지 못했습니다. 그래프는 유지되지만 이 Element의 source
+              span을 확인해야 합니다.
+            </div>
+          ) : null}
+
+          <pre className="source-panel__code" ref={codeScrollRef}>
             <code>
               <span>{highlightedText.before}</span>
               {highlightedText.selected ? (

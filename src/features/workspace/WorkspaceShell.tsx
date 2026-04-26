@@ -3,11 +3,12 @@ import {
   inspectLocalElement,
   inspectRemoteElement,
   isTauriRuntime,
-  probeLocalGStreamer,
   type ElementMetadataResponse,
-  type GStreamerProbeResponse,
   type RemoteTargetInput,
 } from '../../app/backend.ts'
+import type { GStreamerRuntimeStatus } from '../../app/status.ts'
+import { ConnectionBadge } from '../../components/ConnectionBadge.tsx'
+import { IconButton } from '../../components/IconButton.tsx'
 import { InspectorPanel } from '../inspector/InspectorPanel.tsx'
 import { GraphCanvas } from '../../graph/GraphCanvas.tsx'
 import { DiagnosticsPanel } from './DiagnosticsPanel.tsx'
@@ -19,9 +20,12 @@ import type {
 
 type WorkspaceShellProps = {
   document: PipelineDocumentViewModel
+  gstreamerStatus: GStreamerRuntimeStatus
   remoteTarget: RemoteTargetInput | null
   onBackHome: () => void
 }
+
+type WorkspacePanel = 'diagnostics' | 'inspector' | 'source'
 
 type MetadataEntry = {
   data?: ElementMetadataResponse
@@ -53,17 +57,15 @@ function getParserStatusLabel(status: PipelineDocumentViewModel['parserStatus'])
 
 function WorkspaceShell({
   document,
+  gstreamerStatus,
   remoteTarget,
   onBackHome,
 }: WorkspaceShellProps) {
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(
     document.graph.nodes[0]?.id ?? null,
   )
-  const [isDiagnosticsOpen, setIsDiagnosticsOpen] = useState(
-    document.diagnostics.some((diagnostic) => diagnostic.severity !== 'info'),
-  )
-  const [isSourceOpen, setIsSourceOpen] = useState(false)
-  const [localProbe, setLocalProbe] = useState<GStreamerProbeResponse | null>(null)
+  const [selectionRevision, setSelectionRevision] = useState(0)
+  const [activePanel, setActivePanel] = useState<WorkspacePanel | null>(null)
   const [metadataByFactory, setMetadataByFactory] = useState<Record<string, MetadataEntry>>({})
 
   const selectedNode = findNode(document, selectedNodeId)
@@ -74,35 +76,17 @@ function WorkspaceShell({
     ? metadataByFactory[selectedNode.factoryName]
     : undefined
   const metadataAuthority =
-    document.sourceKind === 'remote_file' ? '원격 GStreamer' : '로컬 GStreamer'
-
-  useEffect(() => {
-    if (!isTauriRuntime() || document.sourceKind === 'remote_file') {
-      return
-    }
-
-    let isCancelled = false
-    probeLocalGStreamer()
-      .then((response) => {
-        if (!isCancelled) {
-          setLocalProbe(response)
-        }
-      })
-      .catch(() => {
-        if (!isCancelled) {
-          setLocalProbe({
-            available: false,
-            authority: 'local',
-            diagnostic: '로컬 GStreamer 확인에 실패했습니다.',
-            version_output: null,
-          })
-        }
-      })
-
-    return () => {
-      isCancelled = true
-    }
-  }, [document.id, document.sourceKind])
+    remoteTarget ? '원격 GStreamer' : '로컬 GStreamer'
+  const apiStatus = remoteTarget
+    ? {
+        ...gstreamerStatus.remote,
+        host: undefined,
+        message: gstreamerStatus.remote.version
+          ? '원격 GStreamer API 연결됨'
+          : gstreamerStatus.remote.message,
+        port: undefined,
+      }
+    : gstreamerStatus.local
 
   useEffect(() => {
     if (!selectedNode || !isTauriRuntime()) {
@@ -116,7 +100,7 @@ function WorkspaceShell({
 
     let isCancelled = false
     const loader =
-      document.sourceKind === 'remote_file' && remoteTarget
+      remoteTarget
         ? inspectRemoteElement(remoteTarget, selectedNode.factoryName)
         : inspectLocalElement(selectedNode.factoryName)
 
@@ -153,16 +137,23 @@ function WorkspaceShell({
     return () => {
       isCancelled = true
     }
-  }, [document.sourceKind, metadataByFactory, remoteTarget, selectedNode])
+  }, [metadataByFactory, remoteTarget, selectedNode])
+
+  function togglePanel(panel: WorkspacePanel) {
+    setActivePanel((current) => (current === panel ? null : panel))
+  }
+
+  function handleSelectNode(nodeId: string | null) {
+    setSelectedNodeId(nodeId)
+    setSelectionRevision((current) => current + 1)
+  }
 
   return (
     <main className="app-shell app-shell--workspace">
       <section className="workspace-shell">
         <header className="workspace-topbar panel">
           <div className="workspace-topbar__meta">
-            <button className="secondary-button" onClick={onBackHome} type="button">
-              다른 파이프라인 열기
-            </button>
+            <IconButton icon="arrowLeft" label="첫 화면으로 돌아가기" onClick={onBackHome} />
             <div className="workspace-topbar__title">
               <div className="eyebrow">워크스페이스</div>
               <h1>{document.title}</h1>
@@ -171,34 +162,38 @@ function WorkspaceShell({
           </div>
 
           <div className="workspace-topbar__actions">
+            <ConnectionBadge label="GStreamer API" status={apiStatus} />
+            {remoteTarget ? (
+              <ConnectionBadge label="Remote Server" status={gstreamerStatus.remote} />
+            ) : null}
             <span className="card-chip">{document.sourceLabel}</span>
             <span className="card-chip">
               노드 {document.graph.nodes.length}개 / 엣지 {document.graph.edges.length}개
             </span>
             <span className="card-chip">{getParserStatusLabel(document.parserStatus)}</span>
             <span className="card-chip">{metadataAuthority}</span>
-            <button
-              className={
-                isSourceOpen
-                  ? 'secondary-button diagnostics-toggle is-active'
-                  : 'secondary-button diagnostics-toggle'
-              }
-              onClick={() => setIsSourceOpen((current) => !current)}
-              type="button"
-            >
-              Pipeline 원문
-            </button>
-            <button
-              className={
-                isDiagnosticsOpen
-                  ? 'secondary-button diagnostics-toggle is-active'
-                  : 'secondary-button diagnostics-toggle'
-              }
-              onClick={() => setIsDiagnosticsOpen((current) => !current)}
-              type="button"
-            >
-              진단 {document.diagnostics.length}개
-            </button>
+            <div className="workspace-topbar__panel-actions" aria-label="보조 패널">
+              <IconButton
+                active={activePanel === 'inspector'}
+                badge={selectedNode ? '•' : undefined}
+                icon="panelRight"
+                label="인스펙터 열기"
+                onClick={() => togglePanel('inspector')}
+              />
+              <IconButton
+                active={activePanel === 'source'}
+                icon="fileText"
+                label="Pipeline 원문 열기"
+                onClick={() => togglePanel('source')}
+              />
+              <IconButton
+                active={activePanel === 'diagnostics'}
+                badge={document.diagnostics.length || undefined}
+                icon="diagnostics"
+                label="파서 진단 열기"
+                onClick={() => togglePanel('diagnostics')}
+              />
+            </div>
           </div>
         </header>
 
@@ -213,41 +208,67 @@ function WorkspaceShell({
           </aside>
         ) : null}
 
-        {localProbe && !localProbe.available ? (
+        {gstreamerStatus.local.state === 'failed' && !remoteTarget ? (
           <aside className="workspace-alert severity-info">
             <strong>로컬 GStreamer 정보 없음</strong>
             <span>
-              이 장비에서 `gst-inspect-1.0`을 찾지 못했습니다. 토폴로지는 텍스트 파서
+              {gstreamerStatus.local.message ?? '이 장비에서 `gst-inspect-1.0`을 찾지 못했습니다.'}
+              {' '}
+              토폴로지는 텍스트 파서
               기준으로 계속 표시하고, Element 내부 정보는 설치 후 확인할 수 있습니다.
             </span>
           </aside>
         ) : null}
 
-        <div className="workspace-grid">
+        <div className={activePanel ? 'workspace-grid workspace-grid--drawer-open' : 'workspace-grid'}>
           <section className="workspace-main">
             <GraphCanvas
               document={document}
               selectedNodeId={selectedNodeId}
-              onSelectNode={setSelectedNodeId}
-            />
-            <SourceTextPanel
-              document={document}
-              isOpen={isSourceOpen}
-              selectedNode={selectedNode}
-              onToggle={() => setIsSourceOpen((current) => !current)}
-            />
-            <DiagnosticsPanel
-              diagnostics={document.diagnostics}
-              isOpen={isDiagnosticsOpen}
-              onToggle={() => setIsDiagnosticsOpen((current) => !current)}
+              onSelectNode={handleSelectNode}
             />
           </section>
 
-          <InspectorPanel
-            document={document}
-            metadata={selectedMetadata}
-            selectedNode={selectedNode}
-          />
+          {activePanel ? (
+            <aside className="workspace-drawer">
+              <div className="workspace-drawer__header">
+                <span className="card-chip muted-chip">
+                  {activePanel === 'inspector'
+                    ? '인스펙터'
+                    : activePanel === 'source'
+                      ? 'Pipeline 원문'
+                      : '파서 진단'}
+                </span>
+                <IconButton icon="close" label="패널 닫기" onClick={() => setActivePanel(null)} />
+              </div>
+
+              {activePanel === 'inspector' ? (
+                <InspectorPanel
+                  document={document}
+                  metadata={selectedMetadata}
+                  selectedNode={selectedNode}
+                />
+              ) : null}
+
+              {activePanel === 'source' ? (
+                <SourceTextPanel
+                  document={document}
+                  isOpen
+                  selectedNode={selectedNode}
+                  selectionRevision={selectionRevision}
+                  onToggle={() => setActivePanel(null)}
+                />
+              ) : null}
+
+              {activePanel === 'diagnostics' ? (
+                <DiagnosticsPanel
+                  diagnostics={document.diagnostics}
+                  isOpen
+                  onToggle={() => setActivePanel(null)}
+                />
+              ) : null}
+            </aside>
+          ) : null}
         </div>
       </section>
     </main>
