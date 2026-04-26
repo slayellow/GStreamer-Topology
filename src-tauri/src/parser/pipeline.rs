@@ -10,6 +10,7 @@ enum ChainItem {
     Node(NodeEndpoint),
     Reference(ReferenceEndpoint),
     Caps(CapsSegment),
+    Break,
 }
 
 #[derive(Debug, Clone)]
@@ -51,6 +52,8 @@ struct ParsedElement {
     instance_name: Option<String>,
     properties: Vec<PipelineProperty>,
     loose_tokens: Vec<String>,
+    source_span: SourceSpan,
+    trailing_references: Vec<ReferenceEndpoint>,
 }
 
 pub fn parse_document(
@@ -89,65 +92,14 @@ pub fn parse_graph(normalized_text: &str) -> (PipelineGraph, Vec<ParseDiagnostic
                 continue;
             }
 
-            if let Some(reference) = parse_reference_component(component.1, component.0.clone()) {
-                items.push(ChainItem::Reference(reference));
-                continue;
-            }
-
-            if let Some(caps) = parse_caps_component(component.1, component.0.clone()) {
-                items.push(ChainItem::Caps(caps));
-                continue;
-            }
-
-            match parse_element_component(component.1) {
-                Some(element) => {
-                    let node_id = format!("node-{}", graph.nodes.len());
-                    if let Some(instance_name) = &element.instance_name {
-                        if instance_map
-                            .insert(instance_name.clone(), node_id.clone())
-                            .is_some()
-                        {
-                            diagnostics.push(ParseDiagnostic::warning(
-                                "duplicate-instance-name",
-                                format!(
-                                    "The named element `{instance_name}` was declared more than once."
-                                ),
-                                Some(component.0.clone()),
-                            ));
-                        }
-                    }
-
-                    if !element.loose_tokens.is_empty() {
-                        diagnostics.push(ParseDiagnostic::warning(
-                            "unparsed-element-token",
-                            format!(
-                                "Ignored tokens on element `{}`: {}",
-                                element.factory_name,
-                                element.loose_tokens.join(", ")
-                            ),
-                            Some(component.0.clone()),
-                        ));
-                    }
-
-                    graph.nodes.push(PipelineNode {
-                        id: node_id.clone(),
-                        factory_name: element.factory_name,
-                        instance_name: element.instance_name,
-                        kind: PipelineNodeKind::Element,
-                        properties: element.properties,
-                        source_span: component.0.clone(),
-                    });
-                    items.push(ChainItem::Node(NodeEndpoint {
-                        node_id,
-                        span: component.0,
-                    }));
-                }
-                None => diagnostics.push(ParseDiagnostic::warning(
-                    "empty-component",
-                    "Encountered an empty pipeline component.",
-                    Some(component.0),
-                )),
-            }
+            let component_items = parse_component_items(
+                component.1,
+                component.0,
+                &mut graph,
+                &mut instance_map,
+                &mut diagnostics,
+            );
+            items.extend(component_items);
         }
 
         pending_edges.extend(build_pending_edges(items, &mut diagnostics));
@@ -287,16 +239,95 @@ fn parse_caps_component(text: &str, span: SourceSpan) -> Option<CapsSegment> {
     })
 }
 
-fn parse_element_component(text: &str) -> Option<ParsedElement> {
-    let tokens = split_whitespace_tokens(text);
-    let (factory_span, factory_name) = tokens.first()?.clone();
-    let _ = factory_span;
+fn parse_component_items(
+    text: &str,
+    component_span: SourceSpan,
+    graph: &mut PipelineGraph,
+    instance_map: &mut HashMap<String, String>,
+    diagnostics: &mut Vec<ParseDiagnostic>,
+) -> Vec<ChainItem> {
+    if let Some(reference) = parse_reference_component(text, component_span.clone()) {
+        return vec![ChainItem::Reference(reference)];
+    }
 
+    if let Some(caps) = parse_caps_component(text, component_span.clone()) {
+        return vec![ChainItem::Caps(caps)];
+    }
+
+    let tokens = split_whitespace_tokens(text, component_span.start);
+    let mut items = Vec::new();
+    let mut index = 0usize;
+
+    while index < tokens.len() {
+        let (token_span, token) = tokens[index].clone();
+
+        if let Some(reference) = parse_reference_component(&token, token_span.clone()) {
+            items.push(ChainItem::Reference(reference));
+            index += 1;
+            if index < tokens.len() {
+                items.push(ChainItem::Break);
+            }
+            continue;
+        }
+
+        if let Some(caps) = parse_caps_component(&token, token_span) {
+            items.push(ChainItem::Caps(caps));
+            index += 1;
+            continue;
+        }
+
+        let (element, next_index) = parse_element_tokens(&tokens, index);
+        index = next_index;
+        let element_span = element.source_span.clone();
+        let trailing_references = element.trailing_references.clone();
+        let node_id = push_element_node(
+            graph,
+            instance_map,
+            diagnostics,
+            component_span.clone(),
+            element,
+        );
+
+        items.push(ChainItem::Node(NodeEndpoint {
+            node_id,
+            span: element_span,
+        }));
+
+        for reference in trailing_references {
+            items.push(ChainItem::Break);
+            items.push(ChainItem::Reference(reference));
+        }
+
+        if index < tokens.len() && !matches!(items.last(), Some(ChainItem::Break)) {
+            items.push(ChainItem::Break);
+        }
+    }
+
+    if items.is_empty() {
+        diagnostics.push(ParseDiagnostic::warning(
+            "empty-component",
+            "Encountered an empty pipeline component.",
+            Some(component_span),
+        ));
+    }
+
+    items
+}
+
+fn parse_element_tokens(
+    tokens: &[(SourceSpan, String)],
+    start_index: usize,
+) -> (ParsedElement, usize) {
+    let (factory_span, factory_name) = tokens[start_index].clone();
     let mut properties = Vec::new();
     let mut loose_tokens = Vec::new();
     let mut instance_name = None;
+    let mut source_span = factory_span.clone();
+    let mut trailing_references = Vec::new();
+    let mut index = start_index + 1;
 
-    for (_, token) in tokens.into_iter().skip(1) {
+    while index < tokens.len() {
+        let (token_span, token) = tokens[index].clone();
         if let Some((key, value)) = token.split_once('=') {
             let property = PipelineProperty {
                 key: key.to_string(),
@@ -305,21 +336,87 @@ fn parse_element_component(text: &str) -> Option<ParsedElement> {
             if property.key == "name" {
                 instance_name = Some(property.value.clone());
             }
+            source_span = source_span.merge(&token_span);
             properties.push(property);
-        } else {
+            index += 1;
+            continue;
+        }
+
+        if let Some(reference) = parse_reference_component(&token, token_span) {
+            trailing_references.push(reference);
+            index += 1;
+            continue;
+        }
+
+        if token.contains("::") {
             loose_tokens.push(token);
+            source_span = source_span.merge(&tokens[index].0);
+            index += 1;
+            continue;
+        }
+
+        break;
+    }
+
+    (
+        ParsedElement {
+            factory_name,
+            instance_name,
+            properties,
+            loose_tokens,
+            source_span,
+            trailing_references,
+        },
+        index,
+    )
+}
+
+fn push_element_node(
+    graph: &mut PipelineGraph,
+    instance_map: &mut HashMap<String, String>,
+    diagnostics: &mut Vec<ParseDiagnostic>,
+    component_span: SourceSpan,
+    element: ParsedElement,
+) -> String {
+    let node_id = format!("node-{}", graph.nodes.len());
+    if let Some(instance_name) = &element.instance_name {
+        if instance_map
+            .insert(instance_name.clone(), node_id.clone())
+            .is_some()
+        {
+            diagnostics.push(ParseDiagnostic::warning(
+                "duplicate-instance-name",
+                format!("The named element `{instance_name}` was declared more than once."),
+                Some(component_span.clone()),
+            ));
         }
     }
 
-    Some(ParsedElement {
-        factory_name,
-        instance_name,
-        properties,
-        loose_tokens,
-    })
+    if !element.loose_tokens.is_empty() {
+        diagnostics.push(ParseDiagnostic::warning(
+            "unparsed-element-token",
+            format!(
+                "Ignored tokens on element `{}`: {}",
+                element.factory_name,
+                element.loose_tokens.join(", ")
+            ),
+            Some(component_span),
+        ));
+    }
+
+    graph.nodes.push(PipelineNode {
+        id: node_id.clone(),
+        factory_name: element.factory_name,
+        instance_name: element.instance_name,
+        kind: PipelineNodeKind::Element,
+        properties: element.properties,
+        source_span: element.source_span,
+    });
+
+    node_id
 }
 
-fn split_whitespace_tokens(text: &str) -> Vec<(SourceSpan, String)> {
+fn split_whitespace_tokens(text: &str, base_offset: usize) -> Vec<(SourceSpan, String)> {
     let mut tokens = Vec::new();
     let mut token_start = None;
     let mut in_quotes = false;
@@ -359,7 +456,7 @@ fn split_whitespace_tokens(text: &str) -> Vec<(SourceSpan, String)> {
             {
                 if let Some(start) = token_start.take() {
                     tokens.push((
-                        SourceSpan::new(start, index),
+                        SourceSpan::new(base_offset + start, base_offset + index),
                         text[start..index].to_string(),
                     ));
                 }
@@ -372,7 +469,7 @@ fn split_whitespace_tokens(text: &str) -> Vec<(SourceSpan, String)> {
 
     if let Some(start) = token_start {
         tokens.push((
-            SourceSpan::new(start, text.len()),
+            SourceSpan::new(base_offset + start, base_offset + text.len()),
             text[start..].to_string(),
         ));
     }
@@ -417,6 +514,11 @@ fn build_pending_edges(
                     pending_edges.push(edge);
                 }
                 previous = Some(endpoint);
+                caps.clear();
+                caps_span = None;
+            }
+            ChainItem::Break => {
+                previous = None;
                 caps.clear();
                 caps_span = None;
             }
@@ -579,6 +681,7 @@ mod tests {
     use std::path::PathBuf;
 
     use super::parse_graph;
+    use crate::models::PipelinePortKind;
     use crate::parser::normalize_text;
 
     fn repo_root() -> PathBuf {
@@ -634,6 +737,112 @@ mod tests {
                     .all(|diagnostic| diagnostic.code != "panic"),
                 "parser should report warnings, not crash, for sample {sample_name}"
             );
+            assert!(
+                graph.edges.iter().any(|edge| {
+                    edge.source_port.as_ref().is_some_and(|port| {
+                        matches!(port.port_kind, PipelinePortKind::Named)
+                            && port.port_name.starts_with("src_")
+                    })
+                }),
+                "expected named source pads such as src_1 from sample {sample_name}"
+            );
         }
+    }
+
+    #[test]
+    fn parses_tee_inline_references_as_branches() {
+        let sample_path = repo_root().join("fixtures/pipelines/02_videotestsrc_tee_branch.pld");
+        let raw = fs::read_to_string(sample_path).expect("sample fixture should exist");
+        let normalized = normalize_text(&raw);
+        let (graph, diagnostics) = parse_graph(&normalized.normalized_text);
+        let tee = graph
+            .nodes
+            .iter()
+            .find(|node| node.instance_name.as_deref() == Some("t"))
+            .expect("tee node should exist");
+        let branch_count = graph
+            .edges
+            .iter()
+            .filter(|edge| edge.source_node_id == tee.id)
+            .count();
+
+        assert!(
+            branch_count >= 2,
+            "tee should have multiple outgoing branches"
+        );
+        assert!(
+            diagnostics.iter().all(|diagnostic| {
+                diagnostic.code != "unparsed-element-token" || !diagnostic.message.contains("t.")
+            }),
+            "inline tee references should not be reported as loose tokens"
+        );
+    }
+
+    #[test]
+    fn parses_compositor_named_pad_fixture() {
+        let sample_path = repo_root().join("fixtures/pipelines/04_compositor_named_pad.pld");
+        let raw = fs::read_to_string(sample_path).expect("sample fixture should exist");
+        let normalized = normalize_text(&raw);
+        let (graph, diagnostics) = parse_graph(&normalized.normalized_text);
+        let compositor = graph
+            .nodes
+            .iter()
+            .find(|node| node.instance_name.as_deref() == Some("mix"))
+            .expect("compositor node should exist");
+        let incoming_count = graph
+            .edges
+            .iter()
+            .filter(|edge| edge.target_node_id == compositor.id)
+            .count();
+        let has_request_pad = graph.edges.iter().any(|edge| {
+            edge.target_node_id == compositor.id
+                && edge.target_port.as_ref().is_some_and(|port| {
+                    matches!(port.port_kind, PipelinePortKind::Request)
+                        && port.port_name == "sink_1"
+                })
+        });
+        let outgoing_count = graph
+            .edges
+            .iter()
+            .filter(|edge| edge.source_node_id == compositor.id)
+            .count();
+        let has_sink_to_source_edge = graph.edges.iter().any(|edge| {
+            let source = graph
+                .nodes
+                .iter()
+                .find(|node| node.id == edge.source_node_id);
+            let target = graph
+                .nodes
+                .iter()
+                .find(|node| node.id == edge.target_node_id);
+
+            source.is_some_and(|node| node.factory_name == "autovideosink")
+                && target.is_some_and(|node| node.factory_name == "videotestsrc")
+        });
+
+        assert_eq!(compositor.factory_name, "compositor");
+        assert_eq!(incoming_count, 2, "compositor should receive two inputs");
+        assert_eq!(outgoing_count, 1, "compositor should have one output chain");
+        assert!(
+            has_request_pad,
+            "mix.sink_1 should remain available as a compositor request pad"
+        );
+        assert!(
+            !has_sink_to_source_edge,
+            "adjacent chains without ! should not create autovideosink -> videotestsrc"
+        );
+        assert!(
+            graph
+                .nodes
+                .iter()
+                .all(|node| node.factory_name != "mix." && node.factory_name != "mix.sink_1"),
+            "named pad references should not become fake element nodes"
+        );
+        assert!(
+            diagnostics
+                .iter()
+                .all(|diagnostic| diagnostic.code != "unresolved-reference"),
+            "named compositor references should resolve"
+        );
     }
 }

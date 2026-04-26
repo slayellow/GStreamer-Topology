@@ -13,6 +13,10 @@ Read this file before starting feature work.
   `docs/REPOSITORY_STRUCTURE.md`, `docs/TECH_SPIKES.md`.
 - For every substantial feature or workflow change, use the expert subagent
   loop: `planner -> developer -> designer -> QA`.
+- For sprint-based feature work, create or update GitHub Issues and add them to
+  the GitHub Sprint Board before implementation starts. Each issue should name
+  the planner/developer/designer/QA responsibilities, acceptance criteria, and
+  verification checklist.
 - Prefer fixture-driven development when possible.
 - Prefer partial success plus diagnostics over hard failure.
 - Preserve source-span mapping whenever parsing, graph IR, selection, or
@@ -20,10 +24,85 @@ Read this file before starting feature work.
 - Do not declare a feature complete if the user-visible flow is still
   unverified.
 
+## Sprint Board And Branch Workflow
+
+Use GitHub as the sprint source of truth before substantial implementation.
+
+Sprint setup:
+- Create or update a GitHub Project view named after the active sprint, such as
+  `Sprint 03`.
+- If the GitHub API/CLI cannot create or rename Project views, record the
+  desired view name in the handoff and ask the user to rename it in the GitHub
+  web UI.
+- Create one GitHub Issue per independently testable feature or bug.
+- Write issue titles and descriptions in Korean by default.
+- Use English only for code identifiers, commands, file paths, APIs, and
+  GStreamer syntax.
+- Each issue must include planner/developer/designer/QA responsibilities,
+  acceptance criteria, and verification items.
+- Each feature issue should include its own `사용자 QA 체크리스트` section.
+  Avoid creating a separate checklist-only issue unless the user explicitly
+  asks for an aggregate checklist.
+- Expert QA results must be posted back to the corresponding feature issue as a
+  Korean comment before handing the feature to the user.
+- Add sprint labels such as `sprint-03` and role labels such as
+  `role:developer`, `role:designer`, and `role:qa`.
+
+Branch workflow:
+- Start every sprint from a dedicated branch, preferably zero-padded for sort
+  order, such as `sprint_03`.
+- Do not implement sprint work directly on `main`.
+- Keep the sprint branch open until implementation, automated checks,
+  subagent QA, and user QA are complete.
+- Open a GitHub Pull Request after user QA passes.
+- Merge to `main` only after the PR reflects the completed sprint scope and
+  any remaining unverified areas are explicitly documented.
+
+Sprint closeout:
+- Move completed issues to `Done` only after code is committed, pushed, and the
+  user-visible QA path has passed.
+- The user is expected to inspect `In Progress` issues in the active sprint
+  view, run the checklist in each issue, move passing issues to `Done`, and
+  leave comments on issues that fail.
+- After user QA, review the user's comments and classify each finding as either
+  same-sprint rework or next-sprint backlog.
+- Same-sprint rework should be fixed on the active sprint branch and returned
+  to the user for another QA pass.
+- Next-sprint backlog should be captured as a new issue or moved into the next
+  sprint view.
+- If an issue is only partially implemented, leave it `In Progress` or move the
+  remaining work into the next sprint issue.
+- If a bug is discovered during user QA, create or move a follow-up issue into
+  the next sprint view, such as `Sprint 04`.
+
 ## Required Expert Subagent Loop
 
 For every substantial feature request, create or reuse expert subagents for the
 roles below.
+
+### Team Alias Protocol
+
+Use stable user-facing aliases for the expert loop so the user can address a
+role directly during sprint work.
+
+Default aliases:
+- `Atlas`: planner
+- `Forge`: developer
+- `Loom`: designer
+- `Beacon`: QA
+
+Alias rules:
+- Treat aliases as role contracts, not permanent process IDs. The underlying
+  subagent nickname or session ID may change between runs.
+- If the user says "Ask Beacon" or gives work to one alias, route that request
+  to the matching role. Reuse a live matching subagent when available; otherwise
+  spawn a new one with the same alias in its prompt.
+- Record each alias's output in the relevant GitHub Issue when it affects
+  sprint scope, implementation, design, or verification.
+- The coordinating agent remains responsible for integration, final judgement,
+  and explaining verified versus unverified work.
+- If the user criticizes or redirects an alias, preserve the useful signal and
+  feed it back into the next loop without defensiveness.
 
 ### Planner
 
@@ -91,12 +170,14 @@ QA output format:
 Use this loop for feature delivery:
 
 1. Read `AGENTS.md` and this document.
-2. Have the planner define the smallest useful slice.
-3. Have the developer implement that slice.
-4. Have the designer review the interaction and visual result.
-5. Have QA verify the actual user-visible behavior.
-6. If QA finds issues, return the findings to the developer and repeat the loop.
-7. The coordinating agent summarizes the final state only after QA evidence is
+2. Create or update the GitHub Sprint Board items for the slice.
+3. Have the planner define the smallest useful slice.
+4. Have the developer implement that slice.
+5. Have the designer review the interaction and visual result.
+6. Have QA verify the actual user-visible behavior.
+7. If QA finds issues, return the findings to the developer and repeat the loop.
+8. Provide the user-facing unit test checklist before asking the user to test.
+9. The coordinating agent summarizes the final state only after QA evidence is
    present.
 
 Do not skip the QA step for feature work.

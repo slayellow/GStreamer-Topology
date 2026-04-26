@@ -7,6 +7,7 @@ const blankDocument: PipelineDocumentViewModel = {
   sourceKind: 'sample',
   sourceLabel: 'Canvas shell only',
   parserStatus: 'empty',
+  normalizedText: 'Paste or open a pipeline to populate the graph.',
   normalizedTextPreview: 'Paste or open a pipeline to populate the graph.',
   diagnostics: [
     {
@@ -28,6 +29,8 @@ const pipmuxDocument: PipelineDocumentViewModel = {
   sourceKind: 'sample',
   sourceLabel: '27_pipmux.pld.rtf',
   parserStatus: 'parsed',
+  normalizedText:
+    'qtiqmmfsrc name=eocam0 ! tee name=eoraw ! ... output-selector name=eo_sr_in ... qtivcomposer name=mixer',
   normalizedTextPreview:
     'qtiqmmfsrc name=eocam0 ! tee name=eoraw ! ... output-selector name=eo_sr_in ... qtivcomposer name=mixer',
   diagnostics: [
@@ -289,6 +292,8 @@ const smoothingDocument: PipelineDocumentViewModel = {
   sourceKind: 'sample',
   sourceLabel: '26_release_record_smoothing.pld.rtf',
   parserStatus: 'parsed',
+  normalizedText:
+    'qtiqmmfsrc camera=0 name=eocam0 ! tee name=eoraw ! ... qtivcomposer name=mixer',
   normalizedTextPreview:
     'qtiqmmfsrc name=eocam0 ! tee name=eoraw ! ... splitmuxsink name=tsrec_eo ... tee name=eoenc',
   diagnostics: [

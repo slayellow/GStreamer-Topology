@@ -148,3 +148,46 @@ pub struct RemoteProbeResponse {
     pub version_output: String,
     pub sample_element_output: Option<String>,
 }
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum MetadataAuthority {
+    Local,
+    Remote,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct GStreamerProbeResponse {
+    pub available: bool,
+    pub authority: MetadataAuthority,
+    pub version_output: Option<String>,
+    pub diagnostic: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ElementPropertyMetadata {
+    pub name: String,
+    pub description: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ElementPadTemplateMetadata {
+    pub name: String,
+    pub direction: String,
+    pub presence: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ElementMetadataResponse {
+    pub available: bool,
+    pub authority: MetadataAuthority,
+    pub factory_name: String,
+    pub long_name: Option<String>,
+    pub klass: Option<String>,
+    pub description: Option<String>,
+    pub plugin_name: Option<String>,
+    pub properties: Vec<ElementPropertyMetadata>,
+    pub pad_templates: Vec<ElementPadTemplateMetadata>,
+    pub raw_output: Option<String>,
+    pub diagnostic: Option<String>,
+}

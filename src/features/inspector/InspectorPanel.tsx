@@ -1,3 +1,4 @@
+import type { ElementMetadataResponse } from '../../app/backend.ts'
 import type {
   PipelineDiagnostic,
   PipelineDocumentViewModel,
@@ -7,6 +8,11 @@ import type {
 
 type InspectorPanelProps = {
   document: PipelineDocumentViewModel
+  metadata?: {
+    data?: ElementMetadataResponse
+    message?: string
+    status: 'loading' | 'ready' | 'unavailable'
+  }
   selectedNode: PipelineNodeViewModel | null
 }
 
@@ -78,7 +84,11 @@ function renderDiagnostic(diagnostic: PipelineDiagnostic) {
   )
 }
 
-function InspectorPanel({ document, selectedNode }: InspectorPanelProps) {
+function metadataAuthorityLabel(metadata: ElementMetadataResponse) {
+  return metadata.authority === 'remote' ? '원격 GStreamer' : '로컬 GStreamer'
+}
+
+function InspectorPanel({ document, metadata, selectedNode }: InspectorPanelProps) {
   if (!selectedNode) {
     return (
       <aside className="workspace-panel inspector-panel">
@@ -136,6 +146,81 @@ function InspectorPanel({ document, selectedNode }: InspectorPanelProps) {
           </ul>
         ) : (
           <p className="muted-copy">아직 캡처된 명시적 속성이 없습니다.</p>
+        )}
+      </section>
+
+      <section className="inspector-section">
+        <h3>Element 내부 정보</h3>
+        {!metadata || metadata.status === 'loading' ? (
+          <div className="metadata-card">
+            <span className="card-chip muted-chip">조회 중</span>
+            <p>선택한 Element의 GStreamer 메타데이터를 확인하고 있습니다.</p>
+          </div>
+        ) : metadata.status === 'unavailable' || !metadata.data?.available ? (
+          <div className="metadata-card">
+            <span className="card-chip muted-chip">텍스트 파서 기준</span>
+            <p>
+              {metadata.message ??
+                '이 환경에서 해당 Element의 GStreamer 내부 정보를 가져오지 못했습니다.'}
+            </p>
+          </div>
+        ) : (
+          <div className="metadata-card">
+            <div className="inspector-card__header">
+              <span className="card-chip">{metadataAuthorityLabel(metadata.data)}</span>
+              {metadata.data.plugin_name ? (
+                <span className="card-chip muted-chip">{metadata.data.plugin_name}</span>
+              ) : null}
+            </div>
+            <dl className="metadata-list">
+              {metadata.data.long_name ? (
+                <>
+                  <dt>Long name</dt>
+                  <dd>{metadata.data.long_name}</dd>
+                </>
+              ) : null}
+              {metadata.data.klass ? (
+                <>
+                  <dt>Klass</dt>
+                  <dd>{metadata.data.klass}</dd>
+                </>
+              ) : null}
+              {metadata.data.description ? (
+                <>
+                  <dt>Description</dt>
+                  <dd>{metadata.data.description}</dd>
+                </>
+              ) : null}
+            </dl>
+
+            {metadata.data.pad_templates.length ? (
+              <div className="metadata-subsection">
+                <span className="field-label">Pad templates</span>
+                <ul className="metadata-pill-list">
+                  {metadata.data.pad_templates.slice(0, 6).map((pad) => (
+                    <li key={`${pad.direction}-${pad.name}`}>
+                      {pad.direction} · {pad.name}
+                      {pad.presence ? ` · ${pad.presence}` : ''}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ) : null}
+
+            {metadata.data.properties.length ? (
+              <div className="metadata-subsection">
+                <span className="field-label">GStreamer properties</span>
+                <ul className="metadata-property-list">
+                  {metadata.data.properties.slice(0, 8).map((property) => (
+                    <li key={property.name}>
+                      <span>{property.name}</span>
+                      {property.description ? <small>{property.description}</small> : null}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ) : null}
+          </div>
         )}
       </section>
 

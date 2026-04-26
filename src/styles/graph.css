@@ -28,10 +28,34 @@
 
 .graph-stage .react-flow__controls,
 .graph-stage .react-flow__minimap {
-  background: rgba(255, 255, 255, 0.82);
-  border: 1px solid var(--stroke-soft);
+  background:
+    linear-gradient(180deg, rgba(225, 236, 248, 0.94), rgba(203, 219, 236, 0.9)),
+    linear-gradient(90deg, rgba(62, 91, 125, 0.12) 1px, transparent 1px),
+    linear-gradient(rgba(62, 91, 125, 0.12) 1px, transparent 1px);
+  background-size: auto, 18px 18px, 18px 18px;
+  border: 1px solid rgba(23, 49, 82, 0.2);
   border-radius: 18px;
   box-shadow: var(--shadow-soft);
+}
+
+.graph-stage .react-flow__minimap {
+  overflow: hidden;
+  width: 220px;
+  height: 150px;
+}
+
+.graph-stage .react-flow__minimap svg {
+  background: transparent;
+}
+
+.graph-stage .react-flow__minimap-mask {
+  fill: rgba(14, 27, 43, 0.18) !important;
+}
+
+.graph-stage .react-flow__minimap-node {
+  stroke: rgba(6, 24, 48, 0.72);
+  stroke-width: 2.4;
+  vector-effect: non-scaling-stroke;
 }
 
 .graph-stage .react-flow__controls-button {
@@ -41,7 +65,9 @@
 }
 
 .graph-stage .react-flow__edge-textbg {
-  fill: rgba(247, 249, 252, 0.9);
+  fill: rgba(247, 250, 253, 0.96);
+  stroke: rgba(23, 49, 82, 0.12);
+  stroke-width: 1;
 }
 
 .graph-badge {
@@ -54,8 +80,21 @@
   font-weight: 600;
 }
 
+.graph-inline-action {
+  border: 0;
+  border-radius: 999px;
+  padding: 5px 8px;
+  background: rgba(21, 141, 255, 0.12);
+  color: var(--accent-primary);
+  font-size: 0.74rem;
+  font-weight: 800;
+}
+
 .technical-node {
+  position: relative;
+  box-sizing: border-box;
   min-width: 220px;
+  height: 100%;
   display: grid;
   gap: 8px;
   padding: 14px;
@@ -81,6 +120,7 @@
 
 .technical-node__eyebrow {
   display: flex;
+  align-items: center;
   justify-content: space-between;
   gap: 10px;
   color: var(--text-muted);
@@ -88,6 +128,21 @@
   font-weight: 700;
   letter-spacing: 0.08em;
   text-transform: uppercase;
+}
+
+.technical-node__drag-handle {
+  margin-left: auto;
+  padding: 2px 6px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.46);
+  color: rgba(22, 37, 58, 0.42);
+  cursor: grab;
+  font-family: var(--font-display);
+  letter-spacing: -0.16em;
+}
+
+.technical-node__drag-handle:active {
+  cursor: grabbing;
 }
 
 .technical-node__tags span {
@@ -103,6 +158,30 @@
   height: 10px;
   background: rgba(22, 37, 58, 0.35);
   border: 2px solid rgba(255, 255, 255, 0.84);
+}
+
+.technical-node__port-label {
+  position: absolute;
+  top: 50%;
+  z-index: 2;
+  padding: 3px 6px;
+  border: 1px solid rgba(23, 49, 82, 0.12);
+  border-radius: 999px;
+  background: rgba(247, 251, 255, 0.86);
+  color: rgba(22, 37, 58, 0.58);
+  font-size: 0.58rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  pointer-events: none;
+  transform: translateY(-50%);
+}
+
+.technical-node__port-label--sink {
+  left: -18px;
+}
+
+.technical-node__port-label--src {
+  right: -14px;
 }
 
 .technical-node.is-selected {
@@ -134,5 +213,5 @@
 }
 
 .graph-minimap {
-  overflow: hidden;
+  color: var(--minimap-node);
 }

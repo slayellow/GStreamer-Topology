@@ -3,17 +3,21 @@ import type {
   BackendParseDiagnostic,
   BackendPipelineDocument,
   BackendPipelineNode,
+  BackendPipelinePort,
   BackendSourceSpan,
 } from '../app/backend.ts'
 import type {
   PipelineDiagnostic,
   PipelineDocumentViewModel,
   PipelineGraphViewModel,
+  PipelinePortViewModel,
   PipelineNodeTone,
   PipelineNodeViewModel,
 } from './types.ts'
 
 const elk = new ELK()
+const DEFAULT_NODE_HEIGHT = 118
+const DEFAULT_NODE_WIDTH = 220
 
 function sourceKindLabel(sourceKind: BackendPipelineDocument['source_kind']) {
   switch (sourceKind) {
@@ -100,6 +104,8 @@ function toLineSpan(text: string, span: BackendSourceSpan | undefined | null) {
   }
 
   return {
+    start: span.start,
+    end: span.end,
     lineStart: countLineBreaks(text, span.start),
     lineEnd: countLineBreaks(text, span.end),
   }
@@ -142,7 +148,8 @@ function classifyTone(node: BackendPipelineNode): PipelineNodeTone {
   if (
     factory === 'funnel' ||
     factory.includes('mux') ||
-    factory.includes('composer')
+    factory.includes('composer') ||
+    factory.includes('compositor')
   ) {
     return 'merge'
   }
@@ -200,6 +207,59 @@ function nodeTags(node: BackendPipelineNode) {
   return Array.from(tags).slice(0, 4)
 }
 
+function nodeDimensions(node: BackendPipelineNode) {
+  return {
+    width: Math.max(DEFAULT_NODE_WIDTH, (node.instance_name || node.factory_name).length * 8 + 120),
+    height: DEFAULT_NODE_HEIGHT,
+  }
+}
+
+function portViewModel(
+  port: BackendPipelinePort | null | undefined,
+): PipelinePortViewModel | undefined {
+  if (!port) {
+    return undefined
+  }
+
+  return {
+    id: port.id,
+    kind: port.port_kind,
+    name: port.port_name,
+    nodeId: port.node_id,
+  }
+}
+
+function portDirectionLabel(port: PipelinePortViewModel | undefined, fallback: 'SRC' | 'SINK') {
+  if (!port) {
+    return fallback
+  }
+
+  const direction =
+    port.kind === 'src'
+      ? 'SRC'
+      : port.kind === 'sink' || port.kind === 'request'
+        ? 'SINK'
+        : fallback
+  const shouldShowName =
+    port.kind === 'request' ||
+    port.kind === 'named' ||
+    (direction === 'SINK' && port.name !== 'sink') ||
+    (direction === 'SRC' && port.name !== 'src')
+
+  return shouldShowName ? `${direction} ${port.name}` : direction
+}
+
+function edgeLabel(edge: BackendPipelineDocument['graph']['edges'][number]) {
+  const sourcePort = portViewModel(edge.source_port)
+  const targetPort = portViewModel(edge.target_port)
+  const flowLabel = `${portDirectionLabel(sourcePort, 'SRC')} -> ${portDirectionLabel(
+    targetPort,
+    'SINK',
+  )}`
+
+  return edge.caps_label ? `${flowLabel} · ${edge.caps_label}` : flowLabel
+}
+
 function buildWarnings(
   node: BackendPipelineNode,
   diagnostics: BackendParseDiagnostic[],
@@ -211,9 +271,7 @@ function buildWarnings(
         return false
       }
 
-        return (
-          span.start <= node.source_span.end && span.end >= node.source_span.start
-      )
+      return span.start <= node.source_span.end && span.end >= node.source_span.start
     })
     .map(localizeDiagnosticMessage)
 }
@@ -234,8 +292,7 @@ async function layoutNodes(
     },
     children: nodes.map((node) => ({
       id: node.id,
-      width: Math.max(220, (node.instance_name || node.factory_name).length * 8 + 120),
-      height: 118,
+      ...nodeDimensions(node),
     })),
     edges: edges.map((edge) => ({
       id: edge.id,
@@ -255,6 +312,7 @@ async function layoutNodes(
   const viewNodes: PipelineNodeViewModel[] = nodes.map((node) => ({
     id: node.id,
     description: summarizeNode(node),
+    dimensions: nodeDimensions(node),
     factoryName: node.factory_name,
     instanceName: node.instance_name ?? undefined,
     kind: node.kind,
@@ -278,6 +336,7 @@ export async function toViewModel(
       severity: severityLabel(diagnostic.severity),
       message: localizeDiagnosticMessage(diagnostic),
       nodeId: undefined,
+      sourceSpan: toLineSpan(document.normalized_text, diagnostic.span),
     }),
   )
 
@@ -297,13 +356,11 @@ export async function toViewModel(
     })),
     edges: document.graph.edges.map((edge) => ({
       id: edge.id,
+      label: edgeLabel(edge),
+      sourcePort: portViewModel(edge.source_port),
       sourceNodeId: edge.source_node_id,
+      targetPort: portViewModel(edge.target_port),
       targetNodeId: edge.target_node_id,
-      label:
-        edge.caps_label ??
-        edge.target_port?.port_name ??
-        edge.source_port?.port_name ??
-        undefined,
     })),
   }
 
@@ -314,6 +371,7 @@ export async function toViewModel(
     sourceKind: document.source_kind,
     sourceLabel: document.path ?? document.source_name ?? defaultSourceLabel(document.source_kind),
     parserStatus: graph.nodes.length ? 'parsed' : 'placeholder',
+    normalizedText: document.normalized_text,
     normalizedTextPreview: document.normalized_text.slice(0, 340),
     diagnostics,
     graph,
