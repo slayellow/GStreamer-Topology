@@ -5,6 +5,7 @@ type IconName =
   | 'fileText'
   | 'folderOpen'
   | 'info'
+  | 'monitor'
   | 'panelRight'
   | 'server'
 
@@ -70,6 +71,14 @@ function Icon({ name }: IconProps) {
           <circle cx="12" cy="12" r="9" />
           <path d="M12 11v5" />
           <path d="M12 8h.01" />
+        </svg>
+      )
+    case 'monitor':
+      return (
+        <svg {...commonProps}>
+          <rect height="12" rx="2" width="18" x="3" y="4" />
+          <path d="M8 20h8" />
+          <path d="M12 16v4" />
         </svg>
       )
     case 'panelRight':

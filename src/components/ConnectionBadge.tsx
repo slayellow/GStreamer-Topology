@@ -24,7 +24,7 @@ function ConnectionBadge({ label, status }: ConnectionBadgeProps) {
   const endpoint = status.host
     ? `${status.host}${status.port ? `:${status.port}` : ''}`
     : undefined
-  const details = endpoint ?? status.version ?? status.message ?? statusText(status)
+  const details = status.version ?? endpoint ?? status.message ?? statusText(status)
 
   return (
     <span
