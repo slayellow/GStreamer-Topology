@@ -36,6 +36,7 @@
     "vite": "^8.0.9"
   },
   "optionalDependencies": {
-    "@rolldown/binding-win32-x64-msvc": "1.0.0-rc.16"
+    "@rolldown/binding-win32-x64-msvc": "1.0.0-rc.16",
+    "lightningcss-win32-x64-msvc": "1.32.0"
   }
 }
