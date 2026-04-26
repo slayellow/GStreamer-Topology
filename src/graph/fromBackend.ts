@@ -53,14 +53,18 @@ function localizeDiagnosticMessage(diagnostic: BackendParseDiagnostic) {
       return '비어 있는 파이프라인 구성 요소를 발견했습니다.'
     case 'dangling-caps':
       return '어느 파이프라인 세그먼트에도 연결되지 않은 caps 구문을 발견했습니다.'
+    case 'missing-link-operator': {
+      const match = diagnostic.message.match(/`([^`]+)`/)
+      return match
+        ? `토큰 \`${match[1]}\` 앞에 파이프라인 연결 연산자 \`!\` 가 없는 것으로 보입니다.`
+        : '요소 사이에 파이프라인 연결 연산자 `!` 가 없는 것으로 보입니다.'
+    }
     case 'unresolved-reference': {
       const match = diagnostic.message.match(/`([^`]+)`/)
       return match
         ? `이름이 지정된 참조 \`${match[1]}\` 를 선언된 요소와 연결하지 못했습니다.`
         : '이름이 지정된 참조를 선언된 요소와 연결하지 못했습니다.'
     }
-    case 'rtf-unbalanced-groups':
-      return 'RTF 그룹 중첩이 비정상적인 상태로 끝났습니다.'
     default:
       return '파이프라인을 해석하는 중 추가 진단이 보고되었습니다.'
   }
@@ -250,35 +254,30 @@ function portViewModel(
   }
 }
 
-function portDirectionLabel(port: PipelinePortViewModel | undefined, fallback: 'SRC' | 'SINK') {
+function meaningfulPortLabel(port: PipelinePortViewModel | undefined) {
   if (!port) {
-    return fallback
+    return undefined
   }
 
-  const direction =
-    port.kind === 'src'
-      ? 'SRC'
-      : port.kind === 'sink' || port.kind === 'request'
-        ? 'SINK'
-        : fallback
   const shouldShowName =
     port.kind === 'request' ||
     port.kind === 'named' ||
-    (direction === 'SINK' && port.name !== 'sink') ||
-    (direction === 'SRC' && port.name !== 'src')
+    (port.kind === 'sink' && port.name !== 'sink') ||
+    (port.kind === 'src' && port.name !== 'src')
 
-  return shouldShowName ? `${direction} ${port.name}` : direction
+  return shouldShowName ? port.name : undefined
 }
 
 function edgeLabel(edge: BackendPipelineDocument['graph']['edges'][number]) {
   const sourcePort = portViewModel(edge.source_port)
   const targetPort = portViewModel(edge.target_port)
-  const flowLabel = `${portDirectionLabel(sourcePort, 'SRC')} -> ${portDirectionLabel(
-    targetPort,
-    'SINK',
-  )}`
+  const portLabel = [
+    meaningfulPortLabel(sourcePort),
+    meaningfulPortLabel(targetPort),
+  ].filter(Boolean).join(' -> ')
+  const details = [edge.caps_label, portLabel].filter(Boolean)
 
-  return edge.caps_label ? `${flowLabel} · ${edge.caps_label}` : flowLabel
+  return details.length ? details.join(' · ') : undefined
 }
 
 function buildWarnings(
@@ -302,6 +301,15 @@ async function layoutNodes(
   nodes: BackendPipelineNode[],
   edges: BackendPipelineDocument['graph']['edges'],
 ) {
+  const maxEdgeLabelLength = Math.max(
+    0,
+    ...edges.map((edge) => edgeLabel(edge)?.length ?? 0),
+  )
+  const layerSpacing = Math.min(
+    560,
+    Math.max(104, 84 + maxEdgeLabelLength * 4),
+  )
+
   const layout = await elk.layout({
     id: 'root',
     layoutOptions: {
@@ -309,7 +317,7 @@ async function layoutNodes(
       'elk.direction': 'RIGHT',
       'elk.edgeRouting': 'ORTHOGONAL',
       'elk.spacing.nodeNode': '36',
-      'elk.layered.spacing.nodeNodeBetweenLayers': '84',
+      'elk.layered.spacing.nodeNodeBetweenLayers': String(layerSpacing),
     },
     children: nodes.map((node) => ({
       id: node.id,

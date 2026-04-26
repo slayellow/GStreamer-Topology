@@ -4,19 +4,15 @@ use std::net::TcpStream;
 use std::path::Path;
 use std::process::Command;
 
+use base64::{engine::general_purpose, Engine as _};
 use ssh2::Session;
 
 use crate::models::{
     ElementMetadataResponse, ElementPadTemplateMetadata, ElementPropertyMetadata,
-    GStreamerProbeResponse, MetadataAuthority, NormalizationResult, PipelineDocument,
-    RemoteProbeResponse, RemoteTargetRequest, SourceKind,
+    GStreamerProbeResponse, MetadataAuthority, PipelineDocument, RemoteProbeResponse,
+    RemoteTargetRequest, SourceKind,
 };
 use crate::parser::{normalize_text, parse_document};
-
-#[tauri::command]
-pub fn normalize_rtf_text(raw_text: String) -> NormalizationResult {
-    normalize_text(&raw_text)
-}
 
 #[tauri::command]
 pub fn parse_pipeline_text(raw_text: String, source_name: Option<String>) -> PipelineDocument {
@@ -50,6 +46,36 @@ pub fn load_local_pipeline_file(path: String) -> Result<PipelineDocument, String
         source_name,
         normalization.diagnostics,
     ))
+}
+
+#[tauri::command]
+pub fn save_export_file(path: String, contents: String) -> Result<Option<String>, String> {
+    let path = path.trim();
+    if path.is_empty() {
+        return Ok(None);
+    }
+
+    let bytes = general_purpose::STANDARD
+        .decode(contents)
+        .map_err(|error| format!("failed to decode export payload: {error}"))?;
+    let path = Path::new(path);
+    if path.exists() && path.is_dir() {
+        return Err(format!("export path is a directory: {}", path.display()));
+    }
+
+    if let Some(parent) = path.parent() {
+        if !parent.as_os_str().is_empty() && !parent.exists() {
+            return Err(format!(
+                "export folder does not exist: {}",
+                parent.display()
+            ));
+        }
+    }
+
+    fs::write(path, bytes)
+        .map_err(|error| format!("failed to save export `{}`: {error}", path.display()))?;
+
+    Ok(Some(path.to_string_lossy().into_owned()))
 }
 
 #[tauri::command]
@@ -428,5 +454,88 @@ impl EmptyStringFallback for String {
         } else {
             self
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    fn unique_export_path(file_name: &str) -> String {
+        let unique_id = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("system clock should be after unix epoch")
+            .as_nanos();
+
+        std::env::temp_dir()
+            .join(format!("gst-topology-export-{unique_id}-{file_name}"))
+            .to_string_lossy()
+            .into_owned()
+    }
+
+    #[test]
+    fn save_export_file_writes_base64_payload() {
+        let path = unique_export_path("topology.png");
+
+        let saved_path = save_export_file(
+            path.clone(),
+            general_purpose::STANDARD.encode([0x89, b'P', b'N', b'G']),
+        )
+        .expect("base64 export should save");
+
+        assert_eq!(saved_path.as_deref(), Some(path.as_str()));
+        assert_eq!(
+            fs::read(&path).expect("saved png payload should be readable"),
+            vec![0x89, b'P', b'N', b'G']
+        );
+
+        let _ = fs::remove_file(path);
+    }
+
+    #[test]
+    fn save_export_file_treats_blank_path_as_cancel() {
+        let saved_path = save_export_file(
+            "   ".to_string(),
+            general_purpose::STANDARD.encode("ignored"),
+        )
+        .expect("blank path should be treated as cancel");
+
+        assert_eq!(saved_path, None);
+    }
+
+    #[test]
+    fn save_export_file_rejects_invalid_base64_payload() {
+        let path = unique_export_path("invalid.png");
+
+        let error = save_export_file(path, "not valid base64".to_string())
+            .expect_err("invalid base64 should fail");
+
+        assert!(error.contains("failed to decode export payload"));
+    }
+
+    #[test]
+    fn save_export_file_rejects_directory_target() {
+        let error = save_export_file(
+            std::env::temp_dir().to_string_lossy().into_owned(),
+            general_purpose::STANDARD.encode("ignored"),
+        )
+        .expect_err("directory target should fail");
+
+        assert!(error.contains("export path is a directory"));
+    }
+
+    #[test]
+    fn save_export_file_rejects_missing_parent_folder() {
+        let path = std::env::temp_dir()
+            .join("gst-topology-missing-parent")
+            .join("topology.png")
+            .to_string_lossy()
+            .into_owned();
+
+        let error = save_export_file(path, general_purpose::STANDARD.encode("ignored"))
+            .expect_err("missing parent should fail");
+
+        assert!(error.contains("export folder does not exist"));
     }
 }

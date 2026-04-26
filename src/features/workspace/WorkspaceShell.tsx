@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, type PointerEvent as ReactPointerEvent } from 'react'
 import {
   inspectLocalElement,
   inspectRemoteElement,
@@ -6,7 +6,7 @@ import {
   type ElementMetadataResponse,
   type RemoteTargetInput,
 } from '../../app/backend.ts'
-import type { GStreamerRuntimeStatus } from '../../app/status.ts'
+import type { GStreamerRuntimeStatus, RuntimeEndpointStatus } from '../../app/status.ts'
 import { ConnectionBadge } from '../../components/ConnectionBadge.tsx'
 import { IconButton } from '../../components/IconButton.tsx'
 import { InspectorPanel } from '../inspector/InspectorPanel.tsx'
@@ -15,7 +15,9 @@ import { DiagnosticsPanel } from './DiagnosticsPanel.tsx'
 import { SourceTextPanel } from './SourceTextPanel.tsx'
 import type {
   PipelineDocumentViewModel,
+  PipelineDiagnostic,
   PipelineNodeViewModel,
+  SourceSpan,
 } from '../../graph/types.ts'
 
 type WorkspaceShellProps = {
@@ -33,6 +35,12 @@ type MetadataEntry = {
   status: 'loading' | 'ready' | 'unavailable'
 }
 
+type SourceFocus = {
+  id: string
+  label: string
+  span: SourceSpan
+}
+
 function findNode(
   document: PipelineDocumentViewModel,
   nodeId: string | null,
@@ -44,14 +52,19 @@ function findNode(
   return document.graph.nodes.find((node) => node.id === nodeId) ?? null
 }
 
-function getParserStatusLabel(status: PipelineDocumentViewModel['parserStatus']) {
-  switch (status) {
-    case 'parsed':
-      return '파싱 완료'
-    case 'placeholder':
-      return '그래프 없음'
-    case 'empty':
-      return '미파싱'
+function clampPanelHeight(height: number) {
+  const maxHeight = Math.round(window.innerHeight * 0.66)
+  return Math.min(Math.max(height, 190), Math.max(240, maxHeight))
+}
+
+function panelLabel(panel: WorkspacePanel) {
+  switch (panel) {
+    case 'inspector':
+      return 'Inspector'
+    case 'source':
+      return 'Pipeline Source'
+    case 'diagnostics':
+      return 'Parser Diagnostics'
   }
 }
 
@@ -66,6 +79,8 @@ function WorkspaceShell({
   )
   const [selectionRevision, setSelectionRevision] = useState(0)
   const [activePanel, setActivePanel] = useState<WorkspacePanel | null>(null)
+  const [bottomPanelHeight, setBottomPanelHeight] = useState(320)
+  const [sourceFocus, setSourceFocus] = useState<SourceFocus | null>(null)
   const [metadataByFactory, setMetadataByFactory] = useState<Record<string, MetadataEntry>>({})
 
   const selectedNode = findNode(document, selectedNodeId)
@@ -75,8 +90,6 @@ function WorkspaceShell({
   const selectedMetadata = selectedNode
     ? metadataByFactory[selectedNode.factoryName]
     : undefined
-  const metadataAuthority =
-    remoteTarget ? '원격 GStreamer' : '로컬 GStreamer'
   const apiStatus = remoteTarget
     ? {
         ...gstreamerStatus.remote,
@@ -87,6 +100,17 @@ function WorkspaceShell({
         port: undefined,
       }
     : gstreamerStatus.local
+  const runtimeModeStatus: RuntimeEndpointStatus = remoteTarget
+    ? {
+        ...gstreamerStatus.remote,
+        host: remoteTarget.host,
+        port: remoteTarget.port,
+        message: gstreamerStatus.remote.message ?? 'Remote',
+      }
+    : {
+        state: 'connected',
+        message: 'Local',
+      }
 
   useEffect(() => {
     if (!selectedNode || !isTauriRuntime()) {
@@ -144,8 +168,41 @@ function WorkspaceShell({
   }
 
   function handleSelectNode(nodeId: string | null) {
+    setSourceFocus(null)
     setSelectedNodeId(nodeId)
     setSelectionRevision((current) => current + 1)
+  }
+
+  function handleShowDiagnosticSource(diagnostic: PipelineDiagnostic) {
+    if (!diagnostic.sourceSpan?.start && diagnostic.sourceSpan?.start !== 0) {
+      return
+    }
+
+    setSourceFocus({
+      id: diagnostic.id,
+      label: diagnostic.message,
+      span: diagnostic.sourceSpan,
+    })
+    setActivePanel('source')
+    setSelectionRevision((current) => current + 1)
+  }
+
+  function handleResizeStart(event: ReactPointerEvent<HTMLDivElement>) {
+    event.preventDefault()
+    const startY = event.clientY
+    const startHeight = bottomPanelHeight
+
+    function handlePointerMove(moveEvent: PointerEvent) {
+      setBottomPanelHeight(clampPanelHeight(startHeight + startY - moveEvent.clientY))
+    }
+
+    function handlePointerUp() {
+      window.removeEventListener('pointermove', handlePointerMove)
+      window.removeEventListener('pointerup', handlePointerUp)
+    }
+
+    window.addEventListener('pointermove', handlePointerMove)
+    window.addEventListener('pointerup', handlePointerUp)
   }
 
   return (
@@ -155,42 +212,34 @@ function WorkspaceShell({
           <div className="workspace-topbar__meta">
             <IconButton icon="arrowLeft" label="첫 화면으로 돌아가기" onClick={onBackHome} />
             <div className="workspace-topbar__title">
-              <div className="eyebrow">워크스페이스</div>
               <h1>{document.title}</h1>
-              <p className="muted-copy">{document.subtitle}</p>
             </div>
           </div>
 
           <div className="workspace-topbar__actions">
             <ConnectionBadge label="GStreamer API" status={apiStatus} />
-            {remoteTarget ? (
-              <ConnectionBadge label="Remote Server" status={gstreamerStatus.remote} />
-            ) : null}
-            <span className="card-chip">{document.sourceLabel}</span>
-            <span className="card-chip">
-              노드 {document.graph.nodes.length}개 / 엣지 {document.graph.edges.length}개
-            </span>
-            <span className="card-chip">{getParserStatusLabel(document.parserStatus)}</span>
-            <span className="card-chip">{metadataAuthority}</span>
+            <ConnectionBadge
+              label={remoteTarget ? 'Remote' : 'Local'}
+              status={runtimeModeStatus}
+            />
             <div className="workspace-topbar__panel-actions" aria-label="보조 패널">
               <IconButton
                 active={activePanel === 'inspector'}
-                badge={selectedNode ? '•' : undefined}
                 icon="panelRight"
-                label="인스펙터 열기"
+                label="Inspector 열기"
                 onClick={() => togglePanel('inspector')}
               />
               <IconButton
                 active={activePanel === 'source'}
                 icon="fileText"
-                label="Pipeline 원문 열기"
+                label="Pipeline Source 열기"
                 onClick={() => togglePanel('source')}
               />
               <IconButton
                 active={activePanel === 'diagnostics'}
                 badge={document.diagnostics.length || undefined}
                 icon="diagnostics"
-                label="파서 진단 열기"
+                label="Parser Diagnostics 열기"
                 onClick={() => togglePanel('diagnostics')}
               />
             </div>
@@ -220,7 +269,7 @@ function WorkspaceShell({
           </aside>
         ) : null}
 
-        <div className={activePanel ? 'workspace-grid workspace-grid--drawer-open' : 'workspace-grid'}>
+        <div className={activePanel ? 'workspace-grid workspace-grid--bottom-open' : 'workspace-grid'}>
           <section className="workspace-main">
             <GraphCanvas
               document={document}
@@ -230,16 +279,38 @@ function WorkspaceShell({
           </section>
 
           {activePanel ? (
-            <aside className="workspace-drawer">
-              <div className="workspace-drawer__header">
-                <span className="card-chip muted-chip">
-                  {activePanel === 'inspector'
-                    ? '인스펙터'
-                    : activePanel === 'source'
-                      ? 'Pipeline 원문'
-                      : '파서 진단'}
-                </span>
-                <IconButton icon="close" label="패널 닫기" onClick={() => setActivePanel(null)} />
+            <section
+              className="workspace-bottom-panel panel"
+              style={{ height: bottomPanelHeight }}
+            >
+              <div
+                aria-label="하단 패널 높이 조절"
+                className="workspace-bottom-panel__resize"
+                onPointerDown={handleResizeStart}
+                role="separator"
+                tabIndex={0}
+              />
+              <div className="workspace-bottom-panel__header">
+                <div className="workspace-bottom-panel__tabs" role="tablist">
+                  {(['inspector', 'source', 'diagnostics'] as WorkspacePanel[]).map((panel) => (
+                    <button
+                      aria-selected={activePanel === panel}
+                      className={activePanel === panel ? 'is-active' : ''}
+                      key={panel}
+                      onClick={() => setActivePanel(panel)}
+                      role="tab"
+                      type="button"
+                    >
+                      {panelLabel(panel)}
+                    </button>
+                  ))}
+                </div>
+                <div className="workspace-bottom-panel__meta">
+                  <span className="card-chip muted-chip">
+                    {panelLabel(activePanel)}
+                  </span>
+                  <IconButton icon="close" label="하단 패널 닫기" onClick={() => setActivePanel(null)} />
+                </div>
               </div>
 
               {activePanel === 'inspector' ? (
@@ -253,6 +324,7 @@ function WorkspaceShell({
               {activePanel === 'source' ? (
                 <SourceTextPanel
                   document={document}
+                  focusedSource={sourceFocus}
                   isOpen
                   selectedNode={selectedNode}
                   selectionRevision={selectionRevision}
@@ -264,10 +336,11 @@ function WorkspaceShell({
                 <DiagnosticsPanel
                   diagnostics={document.diagnostics}
                   isOpen
+                  onShowSource={handleShowDiagnosticSource}
                   onToggle={() => setActivePanel(null)}
                 />
               ) : null}
-            </aside>
+            </section>
           ) : null}
         </div>
       </section>

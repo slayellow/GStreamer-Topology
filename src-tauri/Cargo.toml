@@ -14,6 +14,7 @@ name = "gstreamer_to_topology_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
 [dependencies]
+base64 = "0.22"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 tauri = { version = "=2.0.0", features = [] }
@@ -23,3 +24,6 @@ ssh2 = { version = "0.9.5", features = ["vendored-openssl"] }
 [target.'cfg(target_os = "macos")'.dependencies]
 security-framework = "=3.5.1"
 security-framework-sys = "=2.15.0"
+# Tauri dev on Cargo 1.83 can resolve native-tls -> tempfile to a newer
+# edition2024-only chain. Pin the compatible line until the toolchain moves.
+tempfile = "=3.14.0"

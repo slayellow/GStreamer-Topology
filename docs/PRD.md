@@ -54,7 +54,7 @@ paths, so that I can isolate one flow inside a very large pipeline.
 
 ### Must Have
 
-- Local file open for `.txt`, `.pld`, `.pld.rtf`
+- Local file open for `.txt`, `.pld`
 - Paste pipeline text
 - Remote login via host, username, password
 - Remote file open over SFTP
@@ -67,7 +67,7 @@ paths, so that I can isolate one flow inside a very large pipeline.
 
 ### Should Have
 
-- Export as `SVG`, `PNG`, and later `PDF`
+- Export as `PNG`, `JPG`, and later `PDF`
 - Recent files and recent targets
 - Branch collapse and expand
 - Missing element or unresolved reference warnings
@@ -83,7 +83,7 @@ paths, so that I can isolate one flow inside a very large pipeline.
 
 ### FR-1 Local Input
 
-The app shall open local pipeline text files and RTF-wrapped pipeline files.
+The app shall open local pipeline text files in supported plain-text formats.
 
 ### FR-2 Remote Connection
 
@@ -149,7 +149,7 @@ Use a Miro-inspired "Technical Canvas" approach:
 
 ## Acceptance Criteria For MVP
 
-- Opening either sample `.pld.rtf` file renders a usable graph
+- Opening either large sample `.pld` file renders a usable graph
 - Unknown elements do not crash the parser
 - Clicking a node updates the inspector
 - Search can jump to a named element

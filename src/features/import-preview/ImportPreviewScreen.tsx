@@ -56,7 +56,7 @@ function ImportPreviewScreen({
                 id="preview-pipeline-file"
                 onChange={onFileSelected}
                 type="file"
-                accept=".txt,.pld,.rtf,.pld.rtf"
+                accept=".pld,.txt"
               />
             </label>
           </div>

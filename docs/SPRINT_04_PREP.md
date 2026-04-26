@@ -11,7 +11,7 @@ Base:
 ## Sprint Goal
 
 Stabilize the topology verification workflow for real user files by making long
-RTF source highlighting reliable, then simplify the Local/Remote entry
+`.pld` source highlighting reliable, then simplify the Local/Remote entry
 experience so Remote Server access is clearly separated from the local pipeline
 workflow.
 
@@ -22,7 +22,7 @@ Primary implementation order:
 1. `#16` `스프린트 04: 파일 가져오기 미리보기와 토폴로지 생성 단계 분리`
 2. `#17` `스프린트 04: 아이콘 중심 캔버스 툴바와 보조 패널 Drawer 전환`
 3. `#13` `스프린트 04: Local/Remote 진입 UX와 Remote Server 접속 모달 재설계`
-4. `#14` `스프린트 04: 긴 RTF Pipeline 원문 하이라이트 안정화`
+4. `#14` `스프린트 04: 긴 Pipeline 원문 하이라이트 안정화`
 
 Rationale:
 - `#16` comes first because file import no longer goes directly to canvas; the
@@ -61,7 +61,7 @@ Use the stable aliases defined in `AGENTS.md` and `docs/PROCESS_POLICY.md`.
 ### Atlas Planning Summary
 
 Goal:
-- Make the user able to trust graph-to-source navigation on long RTF files, then
+- Make the user able to trust graph-to-source navigation on long `.pld` files, then
   clarify the Local/Remote entry flow.
 
 Smallest useful slices:
@@ -71,7 +71,8 @@ Smallest useful slices:
 - Surface GStreamer API and Remote Server connection status through status
   badges.
 - Add regression coverage that validates source spans for
-  `26_release_record_smoothing.pld.rtf` and `27_pipmux.pld.rtf`.
+  `fixtures/pipelines/26_release_record_smoothing.pld` and
+  `fixtures/pipelines/27_pipmux.pld`.
 - Fix source-panel highlighting and scrolling for long normalized text.
 - Redesign the home entry so Local remains the default and Remote Server opens
   from a separate modal.
@@ -115,7 +116,7 @@ Implementation order:
   full-width by default.
 - Add GStreamer API and Remote Server status badges across home, preview, and
   workspace.
-- Finish long RTF source highlight reliability after the source panel lives in
+- Finish long `.pld` source highlight reliability after the source panel lives in
   the drawer.
 
 Risks:
@@ -166,10 +167,10 @@ Required automated checks:
   native app process is confirmed alive without immediately crashing.
 
 User-visible checks for `#14`:
-- Open `26_release_record_smoothing.pld.rtf`.
+- Open `fixtures/pipelines/26_release_record_smoothing.pld`.
 - Open `Pipeline 원문`.
 - Click several elements and confirm the source highlight is visible and moves.
-- Repeat with `27_pipmux.pld.rtf`.
+- Repeat with `fixtures/pipelines/27_pipmux.pld`.
 - Record fixture name, clicked element, and panel state for any missing
   highlight.
 
@@ -198,7 +199,8 @@ Unverified until a real target is available:
 ## Acceptance Criteria
 
 For `#14`:
-- `26_release_record_smoothing.pld.rtf` and `27_pipmux.pld.rtf` parse without
+- `fixtures/pipelines/26_release_record_smoothing.pld` and
+  `fixtures/pipelines/27_pipmux.pld` parse without
   source-span bounds regressions.
 - Selected graph nodes with source spans highlight the corresponding normalized
   source text.
@@ -218,7 +220,7 @@ For `#13`:
 
 For `#16` and `#17`:
 - File selection opens a preview/edit screen before workspace navigation.
-- The preview screen displays normalized pipeline text for RTF-backed files.
+- The preview screen displays normalized pipeline text for local `.pld` files.
 - Workspace opens with the topology canvas as the dominant view.
 - Inspector, source text, and parser diagnostics are hidden by default and can
   be toggled from top-right icons.

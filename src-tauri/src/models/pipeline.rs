@@ -44,6 +44,19 @@ pub struct ParseDiagnostic {
 }
 
 impl ParseDiagnostic {
+    pub fn error(
+        code: impl Into<String>,
+        message: impl Into<String>,
+        span: Option<SourceSpan>,
+    ) -> Self {
+        Self {
+            severity: DiagnosticSeverity::Error,
+            code: code.into(),
+            message: message.into(),
+            span,
+        }
+    }
+
     pub fn warning(
         code: impl Into<String>,
         message: impl Into<String>,

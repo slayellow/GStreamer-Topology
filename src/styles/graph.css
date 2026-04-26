@@ -70,6 +70,16 @@
   stroke-width: 1;
 }
 
+.graph-stage .react-flow__edge-text {
+  paint-order: stroke;
+  stroke: rgba(247, 251, 255, 0.6);
+  stroke-width: 2px;
+}
+
+.technical-edge.is-connected .react-flow__edge-path {
+  filter: drop-shadow(0 8px 14px rgba(21, 141, 255, 0.18));
+}
+
 .graph-badge {
   padding: 9px 12px;
   border-radius: 999px;
@@ -88,6 +98,70 @@
   color: var(--accent-primary);
   font-size: 0.74rem;
   font-weight: 800;
+}
+
+.graph-export {
+  position: relative;
+}
+
+.graph-export .icon-button {
+  width: 34px;
+  height: 34px;
+  box-shadow: none;
+}
+
+.graph-export__menu {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  z-index: 12;
+  display: grid;
+  min-width: 96px;
+  gap: 6px;
+  padding: 8px;
+  border: 1px solid rgba(23, 49, 82, 0.12);
+  border-radius: 16px;
+  background: rgba(247, 251, 255, 0.98);
+  box-shadow: var(--shadow-soft);
+}
+
+.graph-export__menu button {
+  border: 0;
+  border-radius: 10px;
+  padding: 8px 10px;
+  background: transparent;
+  color: var(--ink-strong);
+  font-weight: 900;
+  text-align: left;
+}
+
+.graph-export__menu button:hover {
+  background: var(--accent-primary-soft);
+  color: var(--accent-primary);
+}
+
+.graph-export-status {
+  position: absolute;
+  right: 18px;
+  bottom: 18px;
+  z-index: 8;
+  max-width: min(520px, calc(100% - 36px));
+  padding: 10px 12px;
+  border: 1px solid rgba(23, 49, 82, 0.1);
+  border-radius: 14px;
+  background: rgba(247, 251, 255, 0.96);
+  color: var(--text-soft);
+  font-size: 0.82rem;
+  font-weight: 800;
+  box-shadow: var(--shadow-soft);
+}
+
+.graph-export-status--success {
+  color: #13734a;
+}
+
+.graph-export-status--error {
+  color: #a73d3a;
 }
 
 .technical-node {
@@ -160,28 +234,26 @@
   border: 2px solid rgba(255, 255, 255, 0.84);
 }
 
-.technical-node__port-label {
+.technical-node__port-dot {
   position: absolute;
   top: 50%;
   z-index: 2;
-  padding: 3px 6px;
-  border: 1px solid rgba(23, 49, 82, 0.12);
+  width: 16px;
+  height: 16px;
+  border: 3px solid rgba(247, 251, 255, 0.92);
   border-radius: 999px;
-  background: rgba(247, 251, 255, 0.86);
-  color: rgba(22, 37, 58, 0.58);
-  font-size: 0.58rem;
-  font-weight: 800;
-  letter-spacing: 0.08em;
+  background: rgba(22, 37, 58, 0.35);
+  box-shadow: 0 6px 12px rgba(15, 34, 58, 0.14);
   pointer-events: none;
-  transform: translateY(-50%);
+  transform: translate(-50%, -50%);
 }
 
-.technical-node__port-label--sink {
-  left: -18px;
+.technical-node__port-dot--sink {
+  left: 0;
 }
 
-.technical-node__port-label--src {
-  right: -14px;
+.technical-node__port-dot--src {
+  left: 100%;
 }
 
 .technical-node.is-selected {

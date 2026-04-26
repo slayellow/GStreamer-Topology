@@ -13,7 +13,7 @@ These slices are already done at a prototype level:
 
 - `Tauri 2` app scaffold
 - `React + TypeScript` shell with home and workspace flows
-- RTF normalization for the sample `.pld.rtf` files
+- plain-text normalization for the sample `.pld` files
 - Tolerant parser and graph IR generation
 - `React Flow + ELK` topology rendering
 - Basic inspector and diagnostics
@@ -68,12 +68,12 @@ Deliverables:
 
 Goals:
 - add search and jump
-- add export to `SVG`
+- add export to `PNG` and `JPG`
 - improve graph navigation on large fixtures
 
 Deliverables:
 - search can jump to a node
-- current graph can export to `SVG`
+- current graph can export to `PNG` and `JPG`
 - large sample graphs remain usable
 
 ### Slice 5: Security And Packaging Hardening
@@ -100,7 +100,7 @@ Deliverables:
 
 ### P1
 
-- Export `SVG`, then `PNG` and `PDF`
+- Export `PNG` and `JPG`, then `PDF`
 - Recent files and recent targets
 - Branch collapse and expand
 - Missing plugin and unresolved reference warnings

@@ -24,7 +24,9 @@ Sprint board items:
 - `#22` `스프린트 05: 노드 포트와 Edge Label 가독성 개선`
 - `#23` `스프린트 05: Inspector Source Diagnostics 하단 Resizable 패널 전환`
 - `#24` `스프린트 05: 파서 진단 목적 재정의와 Actionable Diagnostics UX`
-- `#25` `스프린트 05: 토폴로지 Export PNG JPG SVG 저장 기능`
+- `#25` `스프린트 05: 토폴로지 Export PNG JPG 저장 기능`
+- `#26` `스프린트 05: 대형 Pipeline fixture 편입과 클릭 렉 완화`
+- `#28` `스프린트 05: Windows/Mac 설치 파일 Release 패키징`
 - Parent board status: `Todo`
 - Sprint 05 Project status: `Todo`
 
@@ -33,7 +35,7 @@ Sprint board items:
 The user has indicated Sprint 05 will likely include canvas UI changes.
 
 Known carry-over from Sprint 04:
-- Long RTF source highlighting is mostly usable, but intermittent misses still
+- Long `.pld` source highlighting is mostly usable, but intermittent misses still
   exist in the canvas/source interaction.
 - The residual issue is accepted for Sprint 04 and tracked as `#19`.
 - Treat source-highlight reliability as part of the upcoming canvas UX work
@@ -57,7 +59,7 @@ User requirements captured on 2026-04-26:
 - Clarify what `Parser Diagnostics` means and avoid implying runtime pipeline
   execution validation.
 - Remove or redesign the inspector icon red dot.
-- Add export actions for `PNG`, `JPG`, and `SVG` with user-selected save path.
+- Add export actions for `PNG` and `JPG` with user-selected save path.
 
 ## Recommended Implementation Order
 
@@ -75,10 +77,51 @@ User requirements captured on 2026-04-26:
 5. `#24` Parser diagnostics purpose and actionable UX.
    - This can build on the new bottom panel and should not be confused with
      runtime GStreamer validation.
-6. `#25` Export `PNG`/`JPG`/`SVG`.
-   - Implement after the canvas visual structure is stable. If full raster
-     export is blocked by Tauri/canvas serialization, ship `SVG` first and
-     split raster export into a follow-up.
+6. `#25` Export `PNG`/`JPG`.
+   - Implement after the canvas visual structure is stable. SVG export is
+     intentionally excluded after user QA feedback.
+7. `#28` Windows/macOS Release packaging.
+   - Configure Tauri bundle output and GitHub Actions draft Release upload.
+   - Keep signing/notarization out of this sprint unless explicitly requested.
+
+## User QA Triage On 2026-04-27
+
+Current-sprint rework:
+- `#25`: PNG/JPG export failed with
+  `undefined is not an object (evaluating 'node.dataset.exportExclude')`.
+  This is a clear implementation bug and should be fixed before Sprint 05
+  closeout.
+- `#28`: The user requested executable/installer files for Windows/macOS
+  instead of CLI-only execution. This is accepted as a current Sprint 05
+  packaging slice.
+
+Next-sprint candidate:
+- `#27`: Reintroduce or redesign automatic selected-node centering for large
+  graphs without click lag. The current Sprint 05 mitigation removed the
+  janky automatic movement and the user accepted the current behavior, so the
+  smoother focus animation should be planned with large-graph UX/performance
+  work in a later sprint.
+
+## User QA Closeout On 2026-04-27
+
+Sprint 05 can be opened as a PR with known carry-over items.
+
+Carry over to the next sprint:
+- `#25`: PNG/JPG export still needs rework. User QA reached the save flow, but
+  the app reported `Save canceled` instead of producing a saved image.
+- `#28`: Release packaging needs follow-up verification. macOS `.dmg` launches,
+  but packaged GUI execution does not find `gst-inspect-1.0` when the binary is
+  only available through shell-specific paths such as Anaconda or Homebrew.
+
+Likely root cause for packaged macOS GStreamer detection:
+- macOS GUI apps launched through Finder/LaunchServices do not inherit the
+  interactive shell `PATH`.
+- The app currently calls `gst-inspect-1.0` by command name only, so packaged
+  builds may fail to discover `/Users/.../anaconda3/bin`,
+  `/opt/homebrew/bin`, or `/usr/local/bin`.
+- Next sprint should add a deterministic discovery strategy, for example
+  probing common install locations, allowing a user-configured binary path, and
+  showing a clear setup action when local GStreamer is unavailable.
 
 ## Expert Intake Summary
 
@@ -104,7 +147,8 @@ Loom:
   a node is selected.
 
 Beacon:
-- Use `26_release_record_smoothing.pld.rtf`, `27_pipmux.pld.rtf`, and short
+- Use `fixtures/pipelines/26_release_record_smoothing.pld`,
+  `fixtures/pipelines/27_pipmux.pld`, and short
   fixtures `01` to `04` for QA.
 - Export must be verified with actual saved files, not only UI clicks.
 - `tauri:dev` still requires native window/process evidence.

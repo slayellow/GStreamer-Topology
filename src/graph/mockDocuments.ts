@@ -27,7 +27,7 @@ const pipmuxDocument: PipelineDocumentViewModel = {
   title: '27_pipmux',
   subtitle: 'Dual EO and IR branches converge into composition, detection, and transport outputs.',
   sourceKind: 'sample',
-  sourceLabel: '27_pipmux.pld.rtf',
+  sourceLabel: '27_pipmux.pld',
   parserStatus: 'parsed',
   normalizedText:
     'qtiqmmfsrc name=eocam0 ! tee name=eoraw ! ... output-selector name=eo_sr_in ... qtivcomposer name=mixer',
@@ -290,7 +290,7 @@ const smoothingDocument: PipelineDocumentViewModel = {
   title: '26_release_record_smoothing',
   subtitle: 'EO and IR capture branches prioritize recording and transport alongside analysis paths.',
   sourceKind: 'sample',
-  sourceLabel: '26_release_record_smoothing.pld.rtf',
+  sourceLabel: '26_release_record_smoothing.pld',
   parserStatus: 'parsed',
   normalizedText:
     'qtiqmmfsrc camera=0 name=eocam0 ! tee name=eoraw ! ... qtivcomposer name=mixer',

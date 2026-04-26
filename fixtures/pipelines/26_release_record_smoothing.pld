@@ -1,0 +1,98 @@
+qtiqmmfsrc camera=0 name=eocam0 ! video/x-raw(memory:GBM),format=NV12,framerate=30/1,width=1920,height=1080 ! 
+tee name=eoraw ! queue ! qtimetamux name=eismux mode=1 latency=10000000 scale_opt=FALSE ! 
+qtivtransform name=eocrop0 background=0 eis-enabled=0 crop=<0,0,1920,1080> eis-mv-num-th=2731 eis-range={EIS_RANGE} lpf-alpha=0.95 ! 
+video/x-raw(memory:GBM),format=NV12,width=1280,height=720 ! 
+qtimlvconverter ! neural-network/tensors,type=FLOAT32 ! queue leaky=1 max-size-buffers=2 ! 
+qtimlsnpe delegate=dsp model=/data/solvit/sr/SVFocusDenoiseNet_1280x720_v2.dlc layers=<n4_5> ! 
+qtimlvsuperresolution module=srnet-float constants="output,q-offsets=<0.0>,q-scales=<1.0>;" ! 
+video/x-raw(memory:GBM),format=RGBA,width=1280,height=720 ! 
+qtivtransform ! video/x-raw(memory:GBM),format=NV12,width=1280,height=720 ! 
+output-selector name=eo_sr_in active-pad=eo_sr_in.src_0  
+
+eoraw. ! qtivtransform name=optsize crop=<704,284,512,512> ! video/x-raw(memory:GBM),format=NV12,width=512,height=512 ! 
+queue ! qticvoptclflow ! cv/x-optical-flow ! eismux.
+
+eo_sr_in.src_0 ! eo_sr_out.
+
+eo_sr_in.src_1 ! queue ! qtivtransform name=eo_srcrop1 crop=<320,180,640,360> ! video/x-raw(memory:GBM),format=NV12,width=640,height=360 ! 
+qtimlvconverter ! neural-network/tensors,type=FLOAT32 ! queue leaky=1 max-size-buffers=2 ! 
+qtimlsnpe delegate=dsp model=/data/solvit/sr/SVFocusSRNet_EO_640x360_x2_v2.dlc layers=<final_act> ! 
+qtimlvsuperresolution module=srnet-float constants="output,q-offsets=<0.0>,q-scales=<1.0>;" ! 
+video/x-raw(memory:GBM),format=RGBA,width=1280,height=720 ! 
+qtivtransform ! eo_sr_out.
+
+eo_sr_in.src_2 ! queue ! qtivtransform name=eo_srcrop2 crop=<480,270,320,180> ! video/x-raw(memory:GBM),format=NV12,width=320,height=180 ! 
+qtimlvconverter ! neural-network/tensors,type=FLOAT32 ! queue leaky=1 max-size-buffers=2 ! 
+qtimlsnpe delegate=dsp model=/data/solvit/sr/SVFocusSRNet_EO_320x180_x4_v2.dlc layers=<final_act> ! 
+neural-network/tensors,type=FLOAT32 ! 
+qtimlvsuperresolution module=srnet-float constants="output,q-offsets=<0.0>,q-scales=<1.0>;" ! 
+video/x-raw(memory:GBM),format=RGBA,width=1280,height=720 ! 
+qtivtransform ! eo_sr_out.
+
+funnel forward-sticky-events=0 name=eo_sr_out !
+identity name=eo_sr_merge_guard !
+tee name=eo_det_hd ! 
+queue ! qtivtransform ! qtioverlay name=eo_hud engine=2 ! queue ! mixer.sink_0 
+
+eo_det_hd. ! queue ! qtivtransform ! video/x-raw,format=RGBA,width=1280,height=736 ! 
+tee name=eorgb ! qtimetamux name=eometamux mode=2 latency=500000000 ! video/x-raw,format=RGBA,width=1280,height=736 ! detections.
+
+eorgb. ! queue ! qtimlvconverter ! neural-network/tensors,type=FLOAT32 ! queue leaky=2 max-size-buffers=2 ! 
+qtimlsnpe name=eo_det delegate=dsp model=/data/solvit/det/yolov11s_csuav_eo_1280_v4.dlc layers=</model.23/Mul_2,/model.23/Sigmoid> ! 
+qtimlvdetection threshold=10.0 results=300 module=ultralytics labels=/data/solvit/det/csuav_v2.labels ! text/x-raw ! eometamux.
+
+v4l2src device=/dev/video2 name=ircam0 ! video/x-raw,format=NV12,width=640,height=512,framerate=30/1 ! 
+tee name=irraw ! qtivtransform name=ircrop0 crop=<0,76,640,360> ! video/x-raw(memory:GBM),format=NV12,width=640,height=360 ! 
+output-selector name=ir_sr_in active-pad=ir_sr_in.src_0 
+
+ir_sr_in.src_0 ! queue ! qtivtransform ! video/x-raw(memory:GBM),format=RGBA,width=1280,height=720 ! 
+qtivtransform ! ir_sr_out.
+
+ir_sr_in.src_1 ! queue ! qtimlvconverter ! neural-network/tensors,type=FLOAT32 ! queue leaky=2 max-size-buffers=2 ! 
+qtimlsnpe delegate=dsp model=/data/solvit/sr/SVFocusSRNet_IR_640x360_x2_v2.dlc layers=<final_act> ! 
+qtimlvsuperresolution module=srnet-float constants="output,q-offsets=<0.0>,q-scales=<1.0>;" !
+video/x-raw(memory:GBM),format=RGBA,width=1280,height=720 ! 
+qtivtransform ! ir_sr_out.
+
+ir_sr_in.src_2 ! queue ! qtivtransform name=ir_srcrop2 crop=<80,45,480,270> ! video/x-raw(memory:GBM),format=NV12,width=640,height=360 ! 
+qtimlvconverter ! neural-network/tensors,type=FLOAT32 ! queue leaky=2 max-size-buffers=2 ! 
+qtimlsnpe delegate=dsp model=/data/solvit/sr/SVFocusSRNet_IR_640x360_x2_v2.dlc layers=<final_act> ! 
+qtimlvsuperresolution module=srnet-float constants="output,q-offsets=<0.0>,q-scales=<1.0>;" !
+video/x-raw(memory:GBM),format=RGBA,width=1280,height=720 ! 
+qtivtransform ! ir_sr_out.
+
+ir_sr_in.src_3 ! queue ! qtivtransform name=ir_srcrop3 crop=<160,90,320,180> ! video/x-raw(memory:GBM),format=NV12,width=320,height=180 ! 
+qtimlvconverter ! neural-network/tensors,type=FLOAT32 ! queue leaky=2 max-size-buffers=2 ! 
+qtimlsnpe delegate=dsp model=/data/solvit/sr/SVFocusSRNet_IR_320x180_x4_v2.dlc layers=<final_act> ! 
+qtimlvsuperresolution module=srnet-float constants="output,q-offsets=<0.0>,q-scales=<1.0>;" !
+video/x-raw(memory:GBM),format=RGBA,width=1280,height=720 ! 
+qtivtransform ! ir_sr_out.
+
+ir_sr_in.src_4 ! queue ! qtivtransform name=ir_srcrop4 crop=<240,135,160,90> ! video/x-raw(memory:GBM),format=NV12,width=320,height=180 ! 
+qtimlvconverter ! neural-network/tensors,type=FLOAT32 ! queue leaky=2 max-size-buffers=2 ! 
+qtimlsnpe delegate=dsp model=/data/solvit/sr/SVFocusSRNet_IR_320x180_x4_v2.dlc layers=<final_act> ! 
+qtimlvsuperresolution module=srnet-float constants="output,q-offsets=<0.0>,q-scales=<1.0>;" !
+video/x-raw(memory:GBM),format=RGBA,width=1280,height=720 ! 
+qtivtransform ! ir_sr_out.
+
+funnel forward-sticky-events=0 name=ir_sr_out !
+identity name=ir_sr_merge_guard !
+tee name=ir_det_hd ! 
+queue ! qtivtransform ! qtioverlay name=ir_hud engine=2 ! queue ! tee name=ir_compos ! mixer.sink_1
+ir_compos. ! qtic2venc name=ir_venc control-rate=2 idr-interval=60 target-bitrate={IR_BITRATE} !
+{VENC_CODEC}parse config-interval=-1 ! tee name=irenc ! rtp{VENC_CODEC}pay mtu=1350 ! queue ! appsink name=irtxstm emit-signals=true 
+
+ir_det_hd. ! queue ! qtivtransform ! video/x-raw,format=RGBA,width=1280,height=736 ! 
+tee name=irrgb ! qtimetamux name=irmetamux mode=2 latency=500000000 ! video/x-raw,format=RGBA,width=1280,height=736 ! detections.
+
+irrgb. ! queue ! qtimlvconverter ! neural-network/tensors,type=FLOAT32 ! queue leaky=2 max-size-buffers=2 ! 
+qtimlsnpe name=ir_det delegate=dsp model=/data/solvit/det/yolov11s_csuav_ir_1280_v5.dlc layers=</model.23/Mul_2,/model.23/Sigmoid> ! 
+qtimlvdetection threshold=10.0 results=300 module=ultralytics labels=/data/solvit/det/csuav_v2.labels ! text/x-raw ! irmetamux.
+
+funnel forward-sticky-events=0 name=detections ! svtracker name=tracks algo={MOT_MODE} fc-delay=46 score-th-eo=60 score-th-ir=30 cam-center=<0.5,0.5> track-hold=150 ! application/targetinfo ! 
+queue ! appsink name=detobjs emit-signals=true 
+
+qtivcomposer name=mixer latency=1000000 sink_0::position="<0, 0>" sink_0::dimensions="<1280, 720>" sink_1::position="<0, 540>" sink_1::dimensions="<320, 180>" sink_0::zorder=1 sink_1::zorder=2
+mixer. ! video/x-raw(memory:GBM),format=NV12 !
+qtic2venc name=eo_venc control-rate=2 idr-interval=60 target-bitrate={EO_BITRATE} !
+{VENC_CODEC}parse config-interval=-1 ! rtp{VENC_CODEC}pay mtu=1350 ! queue ! appsink name=eotxstm emit-signals=true
