@@ -798,6 +798,11 @@
   font-weight: 700;
 }
 
+.source-panel__alert--highlight {
+  background: rgba(220, 238, 255, 0.94);
+  color: var(--accent-primary);
+}
+
 .source-panel__code {
   max-height: min(14svh, 140px);
   margin: 0;

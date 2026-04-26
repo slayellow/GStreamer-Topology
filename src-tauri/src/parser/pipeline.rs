@@ -681,7 +681,7 @@ mod tests {
     use std::path::PathBuf;
 
     use super::parse_graph;
-    use crate::models::PipelinePortKind;
+    use crate::models::{PipelinePortKind, SourceSpan};
     use crate::parser::normalize_text;
 
     fn repo_root() -> PathBuf {
@@ -689,6 +689,26 @@ mod tests {
             .parent()
             .expect("src-tauri should live under the repo root")
             .to_path_buf()
+    }
+
+    fn assert_span_inside_text(sample_name: &str, label: &str, text: &str, span: &SourceSpan) {
+        assert!(
+            span.start < span.end,
+            "{label} in {sample_name} has an empty source span: {span:?}"
+        );
+        assert!(
+            span.end <= text.len(),
+            "{label} in {sample_name} has an out-of-range source span {span:?} for text length {}",
+            text.len()
+        );
+        assert!(
+            text.is_char_boundary(span.start) && text.is_char_boundary(span.end),
+            "{label} in {sample_name} source span is not on UTF-8 boundaries: {span:?}"
+        );
+        assert!(
+            !text[span.start..span.end].trim().is_empty(),
+            "{label} in {sample_name} highlights only whitespace"
+        );
     }
 
     #[test]
@@ -746,6 +766,74 @@ mod tests {
                 }),
                 "expected named source pads such as src_1 from sample {sample_name}"
             );
+        }
+    }
+
+    #[test]
+    fn sample_rtf_node_spans_stay_inside_normalized_text() {
+        for sample_name in ["26_release_record_smoothing.pld.rtf", "27_pipmux.pld.rtf"] {
+            let sample_path = repo_root().join(sample_name);
+            let raw = fs::read_to_string(sample_path).expect("sample fixture should exist");
+            let normalized = normalize_text(&raw);
+            let text = normalized.normalized_text;
+            let (graph, _) = parse_graph(&text);
+
+            assert!(
+                !graph.nodes.is_empty(),
+                "expected nodes from sample {sample_name}"
+            );
+
+            for node in &graph.nodes {
+                let label = format!("node {}", node.id);
+                assert_span_inside_text(sample_name, &label, &text, &node.source_span);
+                assert!(
+                    text[node.source_span.start..node.source_span.end]
+                        .contains(&node.factory_name),
+                    "node {} in {sample_name} source span should include factory `{}`",
+                    node.id,
+                    node.factory_name
+                );
+            }
+
+            for edge in &graph.edges {
+                let label = format!("edge {}", edge.id);
+                assert_span_inside_text(sample_name, &label, &text, &edge.source_span);
+            }
+        }
+    }
+
+    #[test]
+    fn short_fixture_node_and_edge_spans_stay_inside_normalized_text() {
+        for sample_name in [
+            "fixtures/pipelines/01_videotestsrc_linear.pld",
+            "fixtures/pipelines/02_videotestsrc_tee_branch.pld",
+            "fixtures/pipelines/03_audiotestsrc_basic.pld",
+            "fixtures/pipelines/04_compositor_named_pad.pld",
+        ] {
+            let sample_path = repo_root().join(sample_name);
+            let raw = fs::read_to_string(sample_path).expect("sample fixture should exist");
+            let normalized = normalize_text(&raw);
+            let text = normalized.normalized_text;
+            let (graph, diagnostics) = parse_graph(&text);
+
+            for node in &graph.nodes {
+                let label = format!("node {}", node.id);
+                assert_span_inside_text(sample_name, &label, &text, &node.source_span);
+            }
+
+            for edge in &graph.edges {
+                let label = format!("edge {}", edge.id);
+                assert_span_inside_text(sample_name, &label, &text, &edge.source_span);
+            }
+
+            for diagnostic in diagnostics.iter().filter_map(|diagnostic| {
+                diagnostic
+                    .span
+                    .as_ref()
+                    .map(|span| (&diagnostic.code, span))
+            }) {
+                assert_span_inside_text(sample_name, diagnostic.0, &text, diagnostic.1);
+            }
         }
     }
 
