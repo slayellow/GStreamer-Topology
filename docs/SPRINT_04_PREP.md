@@ -19,14 +19,20 @@ workflow.
 
 Primary implementation order:
 
-1. `#14` `스프린트 04: 긴 RTF Pipeline 원문 하이라이트 안정화`
-2. `#13` `스프린트 04: Local/Remote 진입 UX와 Remote Server 접속 모달 재설계`
+1. `#16` `스프린트 04: 파일 가져오기 미리보기와 토폴로지 생성 단계 분리`
+2. `#17` `스프린트 04: 아이콘 중심 캔버스 툴바와 보조 패널 Drawer 전환`
+3. `#13` `스프린트 04: Local/Remote 진입 UX와 Remote Server 접속 모달 재설계`
+4. `#14` `스프린트 04: 긴 RTF Pipeline 원문 하이라이트 안정화`
 
 Rationale:
-- `#14` comes first because source-span highlighting is the trust layer between
-  the rendered topology and the original pipeline text.
-- `#13` comes second because the Remote Server UX is broader and should not
-  distract from fixing the user-reported Sprint 03 regression.
+- `#16` comes first because file import no longer goes directly to canvas; the
+  new preview/edit step defines how users enter the workspace.
+- `#17` comes second because the workspace is now canvas-first with icon-driven
+  drawers for inspector, source text, and parser diagnostics.
+- `#13` follows the new shell structure with Remote Server status badges and a
+  modal-based remote connection flow.
+- `#14` remains in the sprint, but source highlighting should be finalized on
+  top of the new source drawer interaction.
 
 GitHub Project note:
 - Parent board: `GStreamer Topology Sprint Board`
@@ -35,9 +41,13 @@ GitHub Project note:
 - The `Sprint 04` Project is linked to the `GStreamer-Topology` repository.
 - Issues `#13` and `#14` are added to both the parent board and the `Sprint 04`
   Project.
+- Issues `#16` and `#17` were added after the Sprint 04 UI/UX requirements were
+  refined.
 - Current `Sprint 04` Project state:
-  - `#14` is `In Progress`
-  - `#13` is `Todo`
+  - `#16` is `In Progress`
+  - `#17` is `In Progress`
+  - `#13` is `In Progress`
+  - `#14` is `Todo`
 
 ## Expert Loop
 
@@ -55,6 +65,11 @@ Goal:
   clarify the Local/Remote entry flow.
 
 Smallest useful slices:
+- Add a file import preview/edit screen before workspace navigation.
+- Move workspace support panels into icon-triggered drawers so the canvas is
+  maximized by default.
+- Surface GStreamer API and Remote Server connection status through status
+  badges.
 - Add regression coverage that validates source spans for
   `26_release_record_smoothing.pld.rtf` and `27_pipmux.pld.rtf`.
 - Fix source-panel highlighting and scrolling for long normalized text.
@@ -76,6 +91,17 @@ Likely files for `#14`:
 - `src/graph/fromBackend.ts`
 - `src-tauri/src/parser/pipeline.rs`
 
+Likely files for `#16` and `#17`:
+- `src/app/AppShell.tsx`
+- `src/app/status.ts`
+- `src/components/Icon.tsx`
+- `src/components/IconButton.tsx`
+- `src/components/ConnectionBadge.tsx`
+- `src/features/import-preview/ImportPreviewScreen.tsx`
+- `src/features/home/HomeScreen.tsx`
+- `src/features/workspace/WorkspaceShell.tsx`
+- `src/styles/app-shell.css`
+
 Likely files for `#13`:
 - `src/features/home/HomeScreen.tsx`
 - `src/app/AppShell.tsx`
@@ -83,10 +109,14 @@ Likely files for `#13`:
 - `src/styles/app-shell.css`
 
 Implementation order:
-- Start with backend parser/source-span regression tests for long RTF fixtures.
-- Then fix frontend span validation, highlight rendering, and source-panel
-  scroll/focus behavior.
-- After `#14` passes, split Remote Server UX into a modal-oriented UI slice.
+- Start with the import preview/edit screen and reuse parsed preview text for
+  final topology generation.
+- Then switch workspace panels to icon-triggered drawers and keep the canvas
+  full-width by default.
+- Add GStreamer API and Remote Server status badges across home, preview, and
+  workspace.
+- Finish long RTF source highlight reliability after the source panel lives in
+  the drawer.
 
 Risks:
 - Rust spans are byte offsets, while JavaScript string slicing uses UTF-16 code
@@ -116,6 +146,13 @@ For `#13`:
 - Use copy that makes the Remote Server role clear: read GStreamer metadata
   from the target device, not general fleet management.
 
+For `#16` and `#17`:
+- Show a `파일 미리보기` step before opening the workspace.
+- Keep workspace support tools as icon actions in the top-right area.
+- Default the workspace to canvas-first, with drawers opening only on demand.
+- Ensure icon-only controls still have labels, tooltips, and keyboard focus
+  feedback.
+
 ### Beacon QA Summary
 
 Required automated checks:
@@ -141,6 +178,16 @@ User-visible checks for `#13`:
 - Open the Remote Server modal.
 - Enter invalid connection data and confirm the failure is understandable.
 - Confirm the Local file and paste flows still work after failed remote access.
+
+User-visible checks for `#16` and `#17`:
+- Select a local file and confirm the app opens `파일 미리보기`, not the
+  workspace.
+- Edit preview text and confirm `토폴로지 생성` uses the edited text.
+- Confirm the workspace opens with inspector/source/diagnostics hidden by
+  default.
+- Use the top-right icons to open and close inspector, source text, and parser
+  diagnostics.
+- Confirm icon controls show focus outlines and useful labels/tooltips.
 
 Unverified until a real target is available:
 - `OE-Linux` SSH authentication
@@ -168,6 +215,15 @@ For `#13`:
 - Failed remote attempts do not destroy or block the Local workflow.
 - UI copy remains Korean except code identifiers, commands, file paths, APIs,
   and GStreamer syntax.
+
+For `#16` and `#17`:
+- File selection opens a preview/edit screen before workspace navigation.
+- The preview screen displays normalized pipeline text for RTF-backed files.
+- Workspace opens with the topology canvas as the dominant view.
+- Inspector, source text, and parser diagnostics are hidden by default and can
+  be toggled from top-right icons.
+- Icon-only controls provide accessible labels, title tooltips, and focus
+  states.
 
 ## Handoff Rule For Sprint 04
 
