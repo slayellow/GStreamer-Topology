@@ -31,16 +31,21 @@ Use GitHub as the sprint source of truth before substantial implementation.
 Sprint setup:
 - When the user says to start preparing a new sprint, treat that as a board
   setup request, not only as a branch setup request.
-- Create a new GitHub Project view named after the active sprint, such as
+- Keep `GStreamer Topology Sprint Board` as the parent board for the full
+  backlog, history, and cross-sprint visibility.
+- Create a new GitHub Project named after the active sprint, such as
   `Sprint 04`, before implementation starts.
-- Configure the sprint view so the active sprint issues are visible there.
-  Prefer a sprint label or sprint field filter, such as `sprint-04`.
-- Move or prepare the relevant sprint issues, such as `#13` and `#14`, so the
-  user can manage them from that sprint view.
-- If the GitHub API/CLI cannot create or rename Project views, do not silently
-  skip the step. Record the desired view name in the handoff, ask the user to
-  create or rename the view in the GitHub web UI, and still apply the sprint
-  labels/statuses needed for the issues to appear in that view.
+- Link the sprint Project to the `GStreamer-Topology` repository so it appears
+  from the repository's `Projects` tab.
+- Add the active sprint issues, such as `#13` and `#14`, to both the parent
+  board and the sprint-specific Project.
+- Set the sprint-specific Project status so the user can manage that sprint
+  with `Todo`, `In Progress`, and `Done`.
+- Add sprint labels such as `sprint-04` so the same issues remain traceable from
+  the parent board.
+- If GitHub Project creation or repository linking fails, do not silently skip
+  the step. Record the intended Project name, what failed, and what issue
+  labels/statuses were still applied.
 - Create one GitHub Issue per independently testable feature or bug.
 - Write issue titles and descriptions in Korean by default.
 - Use English only for code identifiers, commands, file paths, APIs, and
@@ -69,18 +74,18 @@ Sprint closeout:
 - Move completed issues to `Done` only after code is committed, pushed, and the
   user-visible QA path has passed.
 - The user is expected to inspect `In Progress` issues in the active sprint
-  view, run the checklist in each issue, move passing issues to `Done`, and
+  Project, run the checklist in each issue, move passing issues to `Done`, and
   leave comments on issues that fail.
 - After user QA, review the user's comments and classify each finding as either
   same-sprint rework or next-sprint backlog.
 - Same-sprint rework should be fixed on the active sprint branch and returned
   to the user for another QA pass.
 - Next-sprint backlog should be captured as a new issue or moved into the next
-  sprint view.
+  sprint Project.
 - If an issue is only partially implemented, leave it `In Progress` or move the
   remaining work into the next sprint issue.
 - If a bug is discovered during user QA, create or move a follow-up issue into
-  the next sprint view, such as `Sprint 04`.
+  the next sprint Project, such as `Sprint 04`.
 
 ## Required Expert Subagent Loop
 

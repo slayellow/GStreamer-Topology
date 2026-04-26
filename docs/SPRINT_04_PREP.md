@@ -29,16 +29,15 @@ Rationale:
   distract from fixing the user-reported Sprint 03 regression.
 
 GitHub Project note:
-- GitHub CLI and the currently available GraphQL mutations can update issues,
-  labels, comments, and project item status.
-- They do not expose a safe project view create/rename mutation in this
-  environment.
-- Target board state for Sprint 04 is a dedicated GitHub Project View named
-  `Sprint 04`.
-- Because the available CLI/API cannot create or rename Project views, create
-  or rename the View in the GitHub web UI as `Sprint 04`.
-- Issues `#13` and `#14` already have the `sprint-04` label so they can appear
-  in that View when it is filtered by the active sprint.
+- Parent board: `GStreamer Topology Sprint Board`
+- Sprint execution board: `Sprint 04`
+- Project URL: `https://github.com/users/slayellow/projects/2`
+- The `Sprint 04` Project is linked to the `GStreamer-Topology` repository.
+- Issues `#13` and `#14` are added to both the parent board and the `Sprint 04`
+  Project.
+- Current `Sprint 04` Project state:
+  - `#14` is `In Progress`
+  - `#13` is `Todo`
 
 ## Expert Loop
 
