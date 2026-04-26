@@ -29,11 +29,18 @@ Read this file before starting feature work.
 Use GitHub as the sprint source of truth before substantial implementation.
 
 Sprint setup:
-- Create or update a GitHub Project view named after the active sprint, such as
-  `Sprint 03`.
-- If the GitHub API/CLI cannot create or rename Project views, record the
-  desired view name in the handoff and ask the user to rename it in the GitHub
-  web UI.
+- When the user says to start preparing a new sprint, treat that as a board
+  setup request, not only as a branch setup request.
+- Create a new GitHub Project view named after the active sprint, such as
+  `Sprint 04`, before implementation starts.
+- Configure the sprint view so the active sprint issues are visible there.
+  Prefer a sprint label or sprint field filter, such as `sprint-04`.
+- Move or prepare the relevant sprint issues, such as `#13` and `#14`, so the
+  user can manage them from that sprint view.
+- If the GitHub API/CLI cannot create or rename Project views, do not silently
+  skip the step. Record the desired view name in the handoff, ask the user to
+  create or rename the view in the GitHub web UI, and still apply the sprint
+  labels/statuses needed for the issues to appear in that view.
 - Create one GitHub Issue per independently testable feature or bug.
 - Write issue titles and descriptions in Korean by default.
 - Use English only for code identifiers, commands, file paths, APIs, and

@@ -33,8 +33,12 @@ GitHub Project note:
   labels, comments, and project item status.
 - They do not expose a safe project view create/rename mutation in this
   environment.
-- If a dedicated Project View is needed, create or rename it in the GitHub web
-  UI as `Sprint 04`.
+- Target board state for Sprint 04 is a dedicated GitHub Project View named
+  `Sprint 04`.
+- Because the available CLI/API cannot create or rename Project views, create
+  or rename the View in the GitHub web UI as `Sprint 04`.
+- Issues `#13` and `#14` already have the `sprint-04` label so they can appear
+  in that View when it is filtered by the active sprint.
 
 ## Expert Loop
 
