@@ -73,7 +73,7 @@ function HomeScreen({
                 <Icon name="folderOpen" />
                 <span className="sr-only">로컬 파이프라인 파일 열기</span>
                 <input
-                  accept=".txt,.pld,.rtf,.pld.rtf"
+                  accept=".pld,.txt"
                   id="local-pipeline-file"
                   onChange={onFileSelected}
                   type="file"

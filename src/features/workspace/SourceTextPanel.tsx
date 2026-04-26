@@ -8,6 +8,11 @@ import type {
 
 type SourceTextPanelProps = {
   document: PipelineDocumentViewModel
+  focusedSource?: {
+    id: string
+    label: string
+    span: SourceSpan
+  } | null
   isOpen: boolean
   selectedNode: PipelineNodeViewModel | null
   selectionRevision: number
@@ -73,6 +78,7 @@ function syntaxDiagnostics(diagnostics: PipelineDiagnostic[]) {
 
 function SourceTextPanel({
   document,
+  focusedSource,
   isOpen,
   selectedNode,
   selectionRevision,
@@ -81,9 +87,10 @@ function SourceTextPanel({
   const highlightRef = useRef<HTMLElement | null>(null)
   const codeScrollRef = useRef<HTMLPreElement | null>(null)
   const text = document.normalizedText
-  const selectedSpan = validSpan(text, selectedNode?.sourceSpan)
+  const activeSpan = focusedSource?.span ?? selectedNode?.sourceSpan
+  const selectedSpan = validSpan(text, activeSpan)
   const diagnostics = syntaxDiagnostics(document.diagnostics)
-  const showHighlightFallback = Boolean(selectedNode && !selectedSpan)
+  const showHighlightFallback = Boolean((selectedNode || focusedSource) && !selectedSpan)
 
   const highlightedText = selectedSpan
     ? {
@@ -128,6 +135,7 @@ function SourceTextPanel({
     return () => window.cancelAnimationFrame(frameId)
   }, [
     document.id,
+    focusedSource?.id,
     isOpen,
     selectedNode?.id,
     selectedSpan?.end,
@@ -140,7 +148,13 @@ function SourceTextPanel({
       <button className="source-panel__toggle" onClick={onToggle} type="button">
         <span>
           <strong>Pipeline 원문</strong>
-          {selectedNode?.sourceSpan ? (
+          {focusedSource ? (
+            <em>
+              진단 위치: {focusedSource.span.lineStart}-{focusedSource.span.lineEnd}행 ·
+              {' '}
+              {focusedSource.label}
+            </em>
+          ) : selectedNode?.sourceSpan ? (
             <em>
               선택: {selectedNodeLabel(selectedNode)} · {selectedNode.sourceSpan.lineStart}-
               {selectedNode.sourceSpan.lineEnd}행

@@ -113,7 +113,7 @@ gaps were fixed as part of this slice:
   The current parser is intentionally heuristic.
 - Local metadata lookup has no explicit timeout/output-size cap yet.
 - Remote metadata reconnects per selected element in this first pass.
-- Source highlighting targets normalized text, not original RTF byte positions.
+- Source highlighting targets normalized plain pipeline text positions.
 - Manual layout persistence is local-only and can be reset, but is not yet part
   of an explicit saved workspace model.
 

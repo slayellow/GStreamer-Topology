@@ -299,6 +299,14 @@ fn parse_component_items(
         }
 
         if index < tokens.len() && !matches!(items.last(), Some(ChainItem::Break)) {
+            let (next_span, next_token) = tokens[index].clone();
+            diagnostics.push(ParseDiagnostic::error(
+                "missing-link-operator",
+                format!(
+                    "Token `{next_token}` appears after an element without a `!` link operator."
+                ),
+                Some(next_span),
+            ));
             items.push(ChainItem::Break);
         }
     }
@@ -681,7 +689,7 @@ mod tests {
     use std::path::PathBuf;
 
     use super::parse_graph;
-    use crate::models::{PipelinePortKind, SourceSpan};
+    use crate::models::{DiagnosticSeverity, PipelinePortKind, SourceSpan};
     use crate::parser::normalize_text;
 
     fn repo_root() -> PathBuf {
@@ -712,24 +720,25 @@ mod tests {
     }
 
     #[test]
-    fn normalizes_rtf_without_rich_text_markup() {
-        let sample_path = repo_root().join("26_release_record_smoothing.pld.rtf");
-        let raw = fs::read_to_string(sample_path).expect("sample fixture should exist");
+    fn normalizes_plain_pipeline_text() {
+        let raw =
+            " videotestsrc\u{00a0}pattern=smpte ! videoconvert\r\n\r\n\r\n ! autovideosink \r\n";
 
-        let normalized = normalize_text(&raw);
+        let normalized = normalize_text(raw);
 
-        assert!(!normalized.normalized_text.contains("{\\rtf"));
-        assert!(normalized
-            .normalized_text
-            .contains("qtiqmmfsrc camera=0 name=eocam0 !"));
-        assert!(normalized
-            .normalized_text
-            .contains("eo_sr_in.src_1 ! queue"));
+        assert_eq!(
+            normalized.normalized_text,
+            "videotestsrc pattern=smpte ! videoconvert\n\n ! autovideosink"
+        );
+        assert!(normalized.diagnostics.is_empty());
     }
 
     #[test]
-    fn parses_sample_rtf_files_without_crashing() {
-        for sample_name in ["26_release_record_smoothing.pld.rtf", "27_pipmux.pld.rtf"] {
+    fn parses_large_pld_samples_without_crashing() {
+        for sample_name in [
+            "fixtures/pipelines/26_release_record_smoothing.pld",
+            "fixtures/pipelines/27_pipmux.pld",
+        ] {
             let sample_path = repo_root().join(sample_name);
             let raw = fs::read_to_string(sample_path).expect("sample fixture should exist");
             let normalized = normalize_text(&raw);
@@ -770,8 +779,11 @@ mod tests {
     }
 
     #[test]
-    fn sample_rtf_node_spans_stay_inside_normalized_text() {
-        for sample_name in ["26_release_record_smoothing.pld.rtf", "27_pipmux.pld.rtf"] {
+    fn large_pld_sample_node_spans_stay_inside_normalized_text() {
+        for sample_name in [
+            "fixtures/pipelines/26_release_record_smoothing.pld",
+            "fixtures/pipelines/27_pipmux.pld",
+        ] {
             let sample_path = repo_root().join(sample_name);
             let raw = fs::read_to_string(sample_path).expect("sample fixture should exist");
             let normalized = normalize_text(&raw);
@@ -787,8 +799,7 @@ mod tests {
                 let label = format!("node {}", node.id);
                 assert_span_inside_text(sample_name, &label, &text, &node.source_span);
                 assert!(
-                    text[node.source_span.start..node.source_span.end]
-                        .contains(&node.factory_name),
+                    text[node.source_span.start..node.source_span.end].contains(&node.factory_name),
                     "node {} in {sample_name} source span should include factory `{}`",
                     node.id,
                     node.factory_name
@@ -863,6 +874,27 @@ mod tests {
                 diagnostic.code != "unparsed-element-token" || !diagnostic.message.contains("t.")
             }),
             "inline tee references should not be reported as loose tokens"
+        );
+    }
+
+    #[test]
+    fn reports_missing_link_operator_between_adjacent_element_tokens() {
+        let raw = "videotestsrc pattern=smpte unexpected_token ! videoconvert ! autovideosink";
+        let normalized = normalize_text(raw);
+        let (_graph, diagnostics) = parse_graph(&normalized.normalized_text);
+        let diagnostic = diagnostics
+            .iter()
+            .find(|diagnostic| diagnostic.code == "missing-link-operator")
+            .expect("adjacent element-like token should produce a parser diagnostic");
+        assert_eq!(diagnostic.severity, DiagnosticSeverity::Error);
+        let span = diagnostic
+            .span
+            .as_ref()
+            .expect("missing link diagnostic should point at the unexpected token");
+
+        assert_eq!(
+            &normalized.normalized_text[span.start..span.end],
+            "unexpected_token"
         );
     }
 

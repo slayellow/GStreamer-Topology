@@ -3,22 +3,23 @@
 This list exists to reduce implementation risk before building too much
 product surface area.
 
-## Spike 01: RTF Normalization
+## Spike 01: Plain Pipeline Text Normalization
 
 Question:
-- Can the sample `.pld.rtf` files be converted into clean pipeline text without
+- Can the sample `.pld` files be normalized into clean pipeline text without
   losing meaningful symbols?
 
 Why:
-- The current real samples are RTF-wrapped, not plain text.
+- The current real samples are large plain pipeline files with custom elements,
+  named references, caps strings, and placeholders.
 
 Success criteria:
 - Both sample files normalize into readable pipeline text
 - No branch syntax or caps text is accidentally removed
-- The utility can report normalization warnings
+- Plain text whitespace cleanup does not create parser warnings
 
 Output:
-- normalization utility
+- plain-text normalization utility
 - fixture tests
 
 ## Spike 02: Tolerant Pipeline Parser
@@ -117,19 +118,19 @@ Output:
 ## Spike 07: Export Pipeline Views
 
 Question:
-- What is the best path for exporting a current graph view to `SVG` and later
-  `PNG` and `PDF`?
+- What is the best path for exporting a current graph view to `PNG` and `JPG`,
+  and later `PDF`?
 
 Why:
 - Export is a strong review and documentation feature.
 
 Success criteria:
-- SVG export preserves node labels and edge readability
+- Raster export preserves node labels and edge readability
 - Export works from the rendered graph, not just from raw text
 
 Output:
 - export path decision
-- first SVG export
+- first PNG/JPG export
 
 ## Spike 08: Large Graph Performance
 
@@ -153,7 +154,7 @@ Output:
 
 ## Recommended Spike Order
 
-1. RTF normalization
+1. Plain pipeline text normalization
 2. Tolerant parser
 3. Graph layout on real samples
 4. Remote SSH/SFTP probe

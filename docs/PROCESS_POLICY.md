@@ -275,11 +275,11 @@ If remote verification was not possible, say which part remains unverified:
 
 Use these files first for parser and topology work:
 
-- `26_release_record_smoothing.pld.rtf`
-- `27_pipmux.pld.rtf`
+- `fixtures/pipelines/26_release_record_smoothing.pld`
+- `fixtures/pipelines/27_pipmux.pld`
 
 Use them to validate:
-- RTF normalization
+- plain-text normalization
 - tolerant parsing
 - request-pad links
 - named references

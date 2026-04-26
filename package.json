@@ -16,6 +16,7 @@
     "@tauri-apps/api": "2.0.0",
     "@xyflow/react": "^12.9.2",
     "elkjs": "^0.11.0",
+    "html-to-image": "^1.11.13",
     "react": "^19.2.5",
     "react-dom": "^19.2.5"
   },
@@ -33,5 +34,9 @@
     "typescript": "~6.0.2",
     "typescript-eslint": "^8.58.2",
     "vite": "^8.0.9"
+  },
+  "optionalDependencies": {
+    "@rolldown/binding-win32-x64-msvc": "1.0.0-rc.16",
+    "lightningcss-win32-x64-msvc": "1.32.0"
   }
 }

@@ -126,6 +126,13 @@ export async function loadLocalPipelineFile(path: string) {
   return invoke<BackendPipelineDocument>('load_local_pipeline_file', { path })
 }
 
+export async function saveExportFile(
+  path: string,
+  contents: string,
+) {
+  return invoke<string | null>('save_export_file', { path, contents })
+}
+
 export async function probeLocalGStreamer() {
   return invoke<GStreamerProbeResponse>('probe_local_gstreamer')
 }

@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { toJpeg, toPng } from 'html-to-image'
 import {
   applyNodeChanges,
   Background,
@@ -12,6 +13,8 @@ import {
   type NodeMouseHandler,
   type ReactFlowInstance,
 } from '@xyflow/react'
+import { isTauriRuntime, saveExportFile } from '../app/backend.ts'
+import { IconButton } from '../components/IconButton.tsx'
 import { TechnicalNode } from './nodes/TechnicalNode.tsx'
 import { toReactFlowEdges, toReactFlowNodes, type TechnicalFlowNode } from './toReactFlow.ts'
 import type { PipelineDocumentViewModel } from './types.ts'
@@ -20,6 +23,13 @@ type GraphCanvasProps = {
   document: PipelineDocumentViewModel
   selectedNodeId: string | null
   onSelectNode: (nodeId: string | null) => void
+}
+
+type ExportFormat = 'jpg' | 'png'
+
+type ExportStatus = {
+  tone: 'error' | 'info' | 'success'
+  message: string
 }
 
 const nodeTypes = {
@@ -84,12 +94,56 @@ function savePositions(positions: StoredPositions, key: string) {
   localStorage.setItem(key, JSON.stringify(positions))
 }
 
+function safeFileStem(value: string) {
+  return value
+    .trim()
+    .replace(/\.[^/.]+$/, '')
+    .replace(/[^a-z0-9가-힣_-]+/gi, '-')
+    .replace(/^-+|-+$/g, '')
+    || 'gstreamer-topology'
+}
+
+function splitDataUrl(dataUrl: string) {
+  const commaIndex = dataUrl.indexOf(',')
+  if (commaIndex === -1) {
+    return { metadata: '', payload: dataUrl }
+  }
+
+  return {
+    metadata: dataUrl.slice(0, commaIndex),
+    payload: dataUrl.slice(commaIndex + 1),
+  }
+}
+
+function downloadFromBrowser(dataUrl: string, fileName: string) {
+  const link = document.createElement('a')
+  link.download = fileName
+  link.href = dataUrl
+  link.rel = 'noopener'
+  document.body.appendChild(link)
+  link.click()
+  link.remove()
+}
+
+function shouldExportNode(node: Node) {
+  if (!(node instanceof Element)) {
+    return true
+  }
+
+  return !(
+    node.getAttribute('data-export-exclude') === 'true' ||
+    node.classList.contains('react-flow__controls') ||
+    node.classList.contains('react-flow__minimap')
+  )
+}
+
 function GraphCanvas({
   document,
   selectedNodeId,
   onSelectNode,
 }: GraphCanvasProps) {
   const [flow, setFlow] = useState<ReactFlowInstance<TechnicalFlowNode, Edge> | null>(null)
+  const stageRef = useRef<HTMLDivElement | null>(null)
   const key = storageKey(document)
   const selectedNode = document.graph.nodes.find((node) => node.id === selectedNodeId) ?? null
   const renderedNodes = useMemo(() => toReactFlowNodes({
@@ -100,6 +154,8 @@ function GraphCanvas({
   const [manualPositions, setManualPositions] = useState<StoredPositions>(() =>
     readStoredPositions(key),
   )
+  const [exportMenuOpen, setExportMenuOpen] = useState(false)
+  const [exportStatus, setExportStatus] = useState<ExportStatus | null>(null)
   const nodes = useMemo(
     () =>
       renderedNodes.map((node) => ({
@@ -124,23 +180,6 @@ function GraphCanvas({
       padding: 0.18,
     })
   }, [document.id, flow, nodes.length])
-
-  useEffect(() => {
-    if (!flow || !selectedNodeId) {
-      return
-    }
-
-    const selectedNode = flow.getNode(selectedNodeId)
-
-    if (!selectedNode) {
-      return
-    }
-
-    flow.setCenter(selectedNode.position.x + 120, selectedNode.position.y + 56, {
-      duration: 280,
-      zoom: 0.92,
-    })
-  }, [flow, selectedNodeId])
 
   const handleNodeClick: NodeMouseHandler<TechnicalFlowNode> = (_, node) => {
     onSelectNode(node.id)
@@ -171,10 +210,75 @@ function GraphCanvas({
       padding: 0.18,
     })
   }
+  const handleExport = async (format: ExportFormat) => {
+    const stage = stageRef.current
+    if (!stage) {
+      setExportStatus({
+        tone: 'error',
+        message: 'Export failed: canvas is not ready.',
+      })
+      return
+    }
+
+    setExportMenuOpen(false)
+    setExportStatus({
+      tone: 'info',
+      message: `Exporting ${format.toUpperCase()}...`,
+    })
+
+    try {
+      const fileName = `${safeFileStem(document.title)}.${format}`
+      const options = {
+        backgroundColor: '#eff6fd',
+        cacheBust: true,
+        filter: shouldExportNode,
+        pixelRatio: 2,
+      }
+      const dataUrl =
+        format === 'png'
+          ? await toPng(stage, options)
+          : await toJpeg(stage, { ...options, quality: 0.94 })
+
+      if (isTauriRuntime()) {
+        const defaultPath = fileName
+        const path = window.prompt(
+          '저장할 파일 경로를 입력하세요. 파일 이름만 입력하면 앱 실행 위치에 저장됩니다.',
+          defaultPath,
+        )
+
+        if (path === null) {
+          setExportStatus({ tone: 'info', message: 'Save canceled.' })
+          return
+        }
+
+        const savedPath = await saveExportFile(
+          path,
+          splitDataUrl(dataUrl).payload,
+        )
+        setExportStatus({
+          tone: 'success',
+          message: savedPath ? `Saved: ${savedPath}` : 'Save canceled.',
+        })
+        return
+      }
+
+      downloadFromBrowser(dataUrl, fileName)
+      setExportStatus({
+        tone: 'success',
+        message: `Downloaded ${fileName}.`,
+      })
+    } catch (error) {
+      console.error(error)
+      setExportStatus({
+        tone: 'error',
+        message: `Export failed: ${error instanceof Error ? error.message : 'unknown error'}`,
+      })
+    }
+  }
 
   return (
     <section className="workspace-panel canvas-panel">
-      <div className="graph-stage">
+      <div className="graph-stage" ref={stageRef}>
         <ReactFlow<TechnicalFlowNode, Edge>
           defaultEdgeOptions={{ type: 'smoothstep' }}
           edges={edges}
@@ -188,6 +292,7 @@ function GraphCanvas({
           onNodeDragStop={handleNodeDragStop}
           onNodesChange={handleNodesChange}
           onPaneClick={() => onSelectNode(null)}
+          onlyRenderVisibleElements
           proOptions={{ hideAttribution: true }}
         >
           <Background
@@ -211,21 +316,52 @@ function GraphCanvas({
           />
           <Controls position="bottom-left" showInteractive={false} />
           <Panel className="graph-badge" position="top-left">
-            <strong>토폴로지 캔버스</strong>
+            <strong>Topology Canvas</strong>
             <span>
               {selectedNode
-                ? `선택됨: ${selectedNode.instanceName || selectedNode.factoryName}`
-                : '노드를 클릭해 세부 정보를 확인하세요.'}
+                ? `Selected: ${selectedNode.instanceName || selectedNode.factoryName}`
+                : 'Select a node for details.'}
             </span>
           </Panel>
           <Panel className="graph-badge graph-badge--stats" position="top-right">
-            <span>노드 {document.graph.nodes.length}개</span>
-            <span>엣지 {document.graph.edges.length}개</span>
+            <span>Nodes {document.graph.nodes.length}</span>
+            <span>Edges {document.graph.edges.length}</span>
             <button className="graph-inline-action" onClick={handleResetLayout} type="button">
-              {hasManualLayout ? '레이아웃 초기화' : '자동 배치'}
+              {hasManualLayout ? 'Reset Layout' : 'Auto Layout'}
             </button>
+            <div className="graph-export" data-export-exclude="true">
+              <IconButton
+                active={exportMenuOpen}
+                icon="download"
+                label="Export topology"
+                onClick={() => setExportMenuOpen((current) => !current)}
+              />
+              {exportMenuOpen ? (
+                <div className="graph-export__menu">
+                  {(['png', 'jpg'] as ExportFormat[]).map((format) => (
+                    <button
+                      key={format}
+                      onClick={() => void handleExport(format)}
+                      type="button"
+                    >
+                      {format.toUpperCase()}
+                    </button>
+                  ))}
+                </div>
+              ) : null}
+            </div>
           </Panel>
         </ReactFlow>
+
+        {exportStatus ? (
+          <div
+            className={`graph-export-status graph-export-status--${exportStatus.tone}`}
+            data-export-exclude="true"
+            role="status"
+          >
+            {exportStatus.message}
+          </div>
+        ) : null}
 
         {!document.graph.nodes.length ? (
           <div className="graph-empty-state">

@@ -667,10 +667,14 @@
 .workspace-topbar__title {
   display: grid;
   gap: 8px;
+  min-width: 0;
 }
 
-.workspace-topbar__title p {
-  max-width: 620px;
+.workspace-topbar__title h1 {
+  max-width: min(56vw, 760px);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .workspace-topbar__actions {
@@ -706,13 +710,13 @@
   display: grid;
   flex: 1 1 auto;
   gap: 16px;
-  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr);
   min-height: 0;
   overflow: hidden;
 }
 
-.workspace-grid--drawer-open {
-  grid-template-columns: minmax(0, 1fr) minmax(340px, 400px);
+.workspace-grid--bottom-open {
+  grid-template-rows: minmax(0, 1fr) auto;
 }
 
 .workspace-main {
@@ -720,51 +724,6 @@
   min-width: 0;
   grid-template-rows: minmax(0, 1fr);
   overflow: hidden;
-}
-
-.workspace-drawer {
-  min-height: 0;
-  overflow: hidden;
-  display: grid;
-  grid-template-rows: auto minmax(0, 1fr);
-  gap: 12px;
-}
-
-.workspace-drawer__header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 12px;
-}
-
-.workspace-drawer > .workspace-panel,
-.workspace-drawer .source-panel,
-.workspace-drawer .diagnostics-panel {
-  min-height: 0;
-  max-height: none;
-  height: 100%;
-  overflow: auto;
-}
-
-.workspace-drawer .source-panel__code,
-.workspace-drawer .diagnostics-panel__content {
-  max-height: none;
-}
-
-.workspace-drawer .source-panel {
-  overflow: hidden;
-}
-
-.workspace-drawer .source-panel__body {
-  display: flex;
-  min-height: 0;
-  flex-direction: column;
-}
-
-.workspace-drawer .source-panel__code {
-  min-height: 0;
-  flex: 1 1 auto;
-  overflow: auto;
 }
 
 .workspace-main .canvas-panel {
@@ -825,6 +784,7 @@
 
 .workspace-main .graph-badge--stats {
   display: flex;
+  align-items: center;
   gap: 8px;
 }
 
@@ -834,13 +794,110 @@
 }
 
 .workspace-main .diagnostics-panel {
-  max-height: min(24svh, 240px);
   padding: 0;
   overflow: hidden;
 }
 
+.workspace-bottom-panel {
+  position: relative;
+  min-height: 190px;
+  max-height: 66svh;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  gap: 12px;
+  overflow: hidden;
+  padding: 14px;
+}
+
+.workspace-bottom-panel__resize {
+  position: absolute;
+  top: 5px;
+  left: 50%;
+  width: 74px;
+  height: 8px;
+  border-radius: 999px;
+  background: rgba(23, 49, 82, 0.18);
+  cursor: ns-resize;
+  transform: translateX(-50%);
+}
+
+.workspace-bottom-panel__resize:focus-visible {
+  outline: 2px solid rgba(21, 141, 255, 0.28);
+  outline-offset: 3px;
+}
+
+.workspace-bottom-panel__header,
+.workspace-bottom-panel__meta,
+.workspace-bottom-panel__tabs {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.workspace-bottom-panel__header {
+  justify-content: space-between;
+  padding-top: 8px;
+}
+
+.workspace-bottom-panel__tabs {
+  flex-wrap: wrap;
+}
+
+.workspace-bottom-panel__tabs button {
+  border: 1px solid rgba(23, 49, 82, 0.1);
+  border-radius: 999px;
+  padding: 9px 12px;
+  background: rgba(249, 252, 255, 0.78);
+  color: var(--text-soft);
+  font-weight: 800;
+}
+
+.workspace-bottom-panel__tabs button.is-active {
+  border-color: rgba(21, 141, 255, 0.22);
+  background: var(--accent-primary-soft);
+  color: var(--accent-primary);
+}
+
+.workspace-bottom-panel > .workspace-panel,
+.workspace-bottom-panel .source-panel,
+.workspace-bottom-panel .diagnostics-panel {
+  min-height: 0;
+  max-height: none;
+  height: 100%;
+  overflow: auto;
+}
+
+.workspace-bottom-panel .inspector-panel {
+  padding: 16px;
+}
+
+.workspace-bottom-panel .source-panel,
+.workspace-bottom-panel .diagnostics-panel {
+  padding: 0;
+}
+
+.workspace-bottom-panel .source-panel__code,
+.workspace-bottom-panel .diagnostics-panel__content {
+  max-height: none;
+}
+
+.workspace-bottom-panel .source-panel {
+  overflow: hidden;
+}
+
+.workspace-bottom-panel .source-panel__body {
+  display: flex;
+  min-height: 0;
+  flex-direction: column;
+}
+
+.workspace-bottom-panel .source-panel__code {
+  min-height: 0;
+  flex: 1 1 auto;
+  overflow: auto;
+}
+
 .source-panel {
-  max-height: min(24svh, 240px);
   overflow: hidden;
   border: 1px solid var(--stroke-soft);
   border-radius: 24px;
@@ -954,6 +1011,23 @@
   max-height: min(16svh, 160px);
   overflow: auto;
   padding: 0 20px 20px;
+}
+
+.diagnostic-card__action-copy {
+  color: var(--text-muted);
+  font-size: 0.82rem;
+  font-weight: 700;
+}
+
+.diagnostic-card__source-button {
+  justify-self: start;
+  border: 0;
+  border-radius: 999px;
+  padding: 8px 10px;
+  background: rgba(21, 141, 255, 0.12);
+  color: var(--accent-primary);
+  font-size: 0.78rem;
+  font-weight: 900;
 }
 
 .workspace-main .diagnostic-list {

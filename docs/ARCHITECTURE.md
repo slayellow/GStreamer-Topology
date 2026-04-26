@@ -62,7 +62,7 @@ Primary packages:
 ### Backend
 
 Responsibilities:
-- RTF normalization
+- plain-text normalization
 - Tolerant parsing
 - Graph IR generation
 - Remote SSH/SFTP

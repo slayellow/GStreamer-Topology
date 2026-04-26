@@ -11,7 +11,7 @@ This repository is in active prototype mode, not planning-only mode.
 What exists:
 - `Tauri 2` desktop scaffold
 - `React + TypeScript` app shell with home and workspace flows
-- Rust backend with RTF normalization and tolerant pipeline parsing
+- Rust backend with plain-text normalization and tolerant pipeline parsing
 - `React Flow + ELK` topology rendering
 - Basic inspector and diagnostics surface
 - Local file import and pasted-text parsing
@@ -110,8 +110,8 @@ Do not repeat the `tauri:dev` verification mistake from `2026-04-22`.
 
 Use these as canonical fixtures during parser and workspace development:
 
-- `26_release_record_smoothing.pld.rtf`
-- `27_pipmux.pld.rtf`
+- `fixtures/pipelines/26_release_record_smoothing.pld`
+- `fixtures/pipelines/27_pipmux.pld`
 
 These files contain:
 - `tee`
@@ -126,7 +126,7 @@ These files contain:
 
 The current prototype can:
 
-- Open a local sample file and normalize RTF-wrapped pipeline text
+- Open a local `.pld` sample file and normalize plain pipeline text
 - Parse pipeline text into a tolerant graph model
 - Render a topology workspace with selectable nodes
 - Show basic inspector details and parse diagnostics

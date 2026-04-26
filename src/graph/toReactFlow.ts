@@ -88,13 +88,17 @@ function toReactFlowEdges({
   return graph.edges.map((edge) => {
     const isConnected =
       edge.sourceNodeId === selectedNodeId || edge.targetNodeId === selectedNodeId
+    const label = edge.label?.trim()
 
     return {
       id: edge.id,
       source: edge.sourceNodeId,
       target: edge.targetNodeId,
-      animated: isConnected,
-      label: edge.label,
+      animated: false,
+      ariaLabel: label ?? `${edge.sourceNodeId} to ${edge.targetNodeId}`,
+      className: isConnected ? 'technical-edge is-connected' : 'technical-edge',
+      interactionWidth: 18,
+      label,
       markerEnd: {
         color: isConnected ? 'var(--edge-active)' : 'var(--edge-muted)',
         height: 18,
@@ -108,15 +112,18 @@ function toReactFlowEdges({
       },
       labelStyle: {
         fill: isConnected ? 'var(--edge-active)' : 'var(--text-soft)',
-        fontSize: 11,
+        fontSize: label && label.length > 80 ? 12 : 11,
         fontWeight: 800,
       },
       labelBgStyle: {
         fill: 'rgba(247, 250, 253, 0.96)',
         fillOpacity: 1,
+        stroke: isConnected ? 'rgba(21, 141, 255, 0.28)' : 'rgba(23, 49, 82, 0.14)',
+        strokeWidth: 1,
       },
-      labelBgBorderRadius: 8,
-      labelBgPadding: [6, 4] as [number, number],
+      labelBgBorderRadius: 10,
+      labelBgPadding: [10, 6] as [number, number],
+      zIndex: isConnected ? 4 : 1,
     }
   })
 }
