@@ -80,6 +80,40 @@ export type RemoteProbeResponse = {
   sample_element_output?: string | null
 }
 
+type MetadataAuthority = 'local' | 'remote'
+
+export type GStreamerProbeResponse = {
+  available: boolean
+  authority: MetadataAuthority
+  version_output?: string | null
+  diagnostic?: string | null
+}
+
+export type ElementPropertyMetadata = {
+  name: string
+  description?: string | null
+}
+
+export type ElementPadTemplateMetadata = {
+  name: string
+  direction: string
+  presence?: string | null
+}
+
+export type ElementMetadataResponse = {
+  available: boolean
+  authority: MetadataAuthority
+  factory_name: string
+  long_name?: string | null
+  klass?: string | null
+  description?: string | null
+  plugin_name?: string | null
+  properties: ElementPropertyMetadata[]
+  pad_templates: ElementPadTemplateMetadata[]
+  raw_output?: string | null
+  diagnostic?: string | null
+}
+
 export function isTauriRuntime() {
   return typeof window !== 'undefined' && '__TAURI_INTERNALS__' in (window as TauriWindow)
 }
@@ -90,6 +124,16 @@ export async function parsePipelineText(rawText: string, sourceName?: string) {
 
 export async function loadLocalPipelineFile(path: string) {
   return invoke<BackendPipelineDocument>('load_local_pipeline_file', { path })
+}
+
+export async function probeLocalGStreamer() {
+  return invoke<GStreamerProbeResponse>('probe_local_gstreamer')
+}
+
+export async function inspectLocalElement(factoryName: string) {
+  return invoke<ElementMetadataResponse>('inspect_local_element', {
+    factoryName,
+  })
 }
 
 export async function probeRemoteTarget(
@@ -115,5 +159,18 @@ export async function loadRemotePipeline(
       port: Number(request.port || 22),
     },
     path,
+  })
+}
+
+export async function inspectRemoteElement(
+  request: RemoteTargetInput,
+  factoryName: string,
+) {
+  return invoke<ElementMetadataResponse>('inspect_remote_element', {
+    request: {
+      ...request,
+      port: Number(request.port || 22),
+    },
+    factoryName,
   })
 }

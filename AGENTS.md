@@ -64,6 +64,10 @@ Keep these rules in mind even if you only skim this file:
 - Work in thin slices with one coherent user-visible outcome.
 - For every substantial feature or workflow change, run the expert subagent loop:
   `planner -> developer -> designer -> QA`.
+- Use stable user-facing subagent aliases during sprint work:
+  `Atlas` for planning, `Forge` for development, `Loom` for design, and
+  `Beacon` for QA. The coordinator routes user requests to the matching role
+  even if the underlying subagent session ID changes.
 - Build and verify the current slice end to end before starting adjacent work.
 - Prefer partial success plus diagnostics over hard failure.
 - Preserve source-span mapping whenever parsing, graph IR, selection, or

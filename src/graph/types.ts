@@ -11,8 +11,10 @@ type PipelineNodeTone =
 type DiagnosticSeverity = 'info' | 'warning' | 'error'
 
 type SourceSpan = {
+  end?: number
   lineStart: number
   lineEnd: number
+  start?: number
 }
 
 type PipelineProperty = {
@@ -20,11 +22,21 @@ type PipelineProperty = {
   value: string
 }
 
+type PipelinePortKind = 'src' | 'sink' | 'named' | 'request'
+
+type PipelinePortViewModel = {
+  id: string
+  kind: PipelinePortKind
+  name: string
+  nodeId: string
+}
+
 type PipelineDiagnostic = {
   id: string
   message: string
   nodeId?: string
   severity: DiagnosticSeverity
+  sourceSpan?: SourceSpan
 }
 
 type PipelineNodeViewModel = {
@@ -33,6 +45,10 @@ type PipelineNodeViewModel = {
   factoryName: string
   instanceName?: string
   kind: PipelineNodeKind
+  dimensions?: {
+    width: number
+    height: number
+  }
   position: {
     x: number
     y: number
@@ -47,7 +63,9 @@ type PipelineNodeViewModel = {
 type PipelineEdgeViewModel = {
   id: string
   label?: string
+  sourcePort?: PipelinePortViewModel
   sourceNodeId: string
+  targetPort?: PipelinePortViewModel
   targetNodeId: string
 }
 
@@ -62,6 +80,7 @@ type PipelineDocumentViewModel = {
   id: string
   diagnostics: PipelineDiagnostic[]
   graph: PipelineGraphViewModel
+  normalizedText: string
   normalizedTextPreview: string
   parserStatus: PipelineParserStatus
   sourceKind: PipelineSourceKind
@@ -78,6 +97,8 @@ export type {
   PipelineNodeKind,
   PipelineNodeTone,
   PipelineNodeViewModel,
+  PipelinePortKind,
+  PipelinePortViewModel,
   PipelineProperty,
   PipelineSourceKind,
   SourceSpan,

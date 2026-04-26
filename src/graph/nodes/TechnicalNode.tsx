@@ -29,8 +29,12 @@ function TechnicalNode({ data }: NodeProps<TechnicalFlowNode>) {
         .join(' ')}
     >
       <Handle className="technical-node__handle" position={Position.Left} type="target" />
+      <span className="technical-node__port-label technical-node__port-label--sink">SINK</span>
       <div className="technical-node__eyebrow">
         <span>{nodeKindLabel(data.kind)}</span>
+        <span className="technical-node__drag-handle" title="위치 이동">
+          ::
+        </span>
         {data.warningCount ? <span>경고 {data.warningCount}개</span> : null}
       </div>
       <strong>{data.label}</strong>
@@ -40,6 +44,7 @@ function TechnicalNode({ data }: NodeProps<TechnicalFlowNode>) {
           <span key={tag}>{tag}</span>
         ))}
       </div>
+      <span className="technical-node__port-label technical-node__port-label--src">SRC</span>
       <Handle className="technical-node__handle" position={Position.Right} type="source" />
     </div>
   )

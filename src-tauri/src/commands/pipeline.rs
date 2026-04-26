@@ -2,11 +2,14 @@ use std::fs;
 use std::io::Read;
 use std::net::TcpStream;
 use std::path::Path;
+use std::process::Command;
 
 use ssh2::Session;
 
 use crate::models::{
-    NormalizationResult, PipelineDocument, RemoteProbeResponse, RemoteTargetRequest, SourceKind,
+    ElementMetadataResponse, ElementPadTemplateMetadata, ElementPropertyMetadata,
+    GStreamerProbeResponse, MetadataAuthority, NormalizationResult, PipelineDocument,
+    RemoteProbeResponse, RemoteTargetRequest, SourceKind,
 };
 use crate::parser::{normalize_text, parse_document};
 
@@ -50,6 +53,67 @@ pub fn load_local_pipeline_file(path: String) -> Result<PipelineDocument, String
 }
 
 #[tauri::command]
+pub fn probe_local_gstreamer() -> GStreamerProbeResponse {
+    match Command::new("gst-inspect-1.0").arg("--version").output() {
+        Ok(output) if output.status.success() => GStreamerProbeResponse {
+            available: true,
+            authority: MetadataAuthority::Local,
+            version_output: Some(String::from_utf8_lossy(&output.stdout).trim().to_string()),
+            diagnostic: None,
+        },
+        Ok(output) => GStreamerProbeResponse {
+            available: false,
+            authority: MetadataAuthority::Local,
+            version_output: None,
+            diagnostic: Some(
+                String::from_utf8_lossy(&output.stderr)
+                    .trim()
+                    .to_string()
+                    .if_empty("gst-inspect-1.0 --version command failed."),
+            ),
+        },
+        Err(error) => GStreamerProbeResponse {
+            available: false,
+            authority: MetadataAuthority::Local,
+            version_output: None,
+            diagnostic: Some(format!("gst-inspect-1.0 is not available: {error}")),
+        },
+    }
+}
+
+#[tauri::command]
+pub fn inspect_local_element(factory_name: String) -> ElementMetadataResponse {
+    let factory_name = factory_name.trim().to_string();
+    if factory_name.is_empty() {
+        return unavailable_element_metadata(
+            MetadataAuthority::Local,
+            factory_name,
+            "Element factory name is empty.",
+        );
+    }
+
+    match Command::new("gst-inspect-1.0").arg(&factory_name).output() {
+        Ok(output) if output.status.success() => {
+            let raw_output = String::from_utf8_lossy(&output.stdout).into_owned();
+            parse_gst_inspect_output(MetadataAuthority::Local, factory_name, raw_output)
+        }
+        Ok(output) => unavailable_element_metadata(
+            MetadataAuthority::Local,
+            factory_name,
+            String::from_utf8_lossy(&output.stderr)
+                .trim()
+                .to_string()
+                .if_empty("gst-inspect-1.0 could not inspect this element."),
+        ),
+        Err(error) => unavailable_element_metadata(
+            MetadataAuthority::Local,
+            factory_name,
+            format!("gst-inspect-1.0 is not available: {error}"),
+        ),
+    }
+}
+
+#[tauri::command]
 pub fn probe_remote_target(
     request: RemoteTargetRequest,
     sample_element: Option<String>,
@@ -71,6 +135,38 @@ pub fn probe_remote_target(
         version_output,
         sample_element_output,
     })
+}
+
+#[tauri::command]
+pub fn inspect_remote_element(
+    request: RemoteTargetRequest,
+    factory_name: String,
+) -> Result<ElementMetadataResponse, String> {
+    let factory_name = factory_name.trim().to_string();
+    if factory_name.is_empty() {
+        return Ok(unavailable_element_metadata(
+            MetadataAuthority::Remote,
+            factory_name,
+            "Element factory name is empty.",
+        ));
+    }
+
+    let mut session = connect_remote(&request)?;
+    match exec_remote_command(
+        &mut session,
+        &format!("gst-inspect-1.0 {}", shell_escape(&factory_name)),
+    ) {
+        Ok(raw_output) => Ok(parse_gst_inspect_output(
+            MetadataAuthority::Remote,
+            factory_name,
+            raw_output,
+        )),
+        Err(error) => Ok(unavailable_element_metadata(
+            MetadataAuthority::Remote,
+            factory_name,
+            error,
+        )),
+    }
 }
 
 #[tauri::command]
@@ -161,4 +257,176 @@ fn exec_remote_command(session: &mut Session, command: &str) -> Result<String, S
 
 fn shell_escape(value: &str) -> String {
     format!("'{}'", value.replace('\'', "'\"'\"'"))
+}
+
+fn unavailable_element_metadata(
+    authority: MetadataAuthority,
+    factory_name: String,
+    diagnostic: impl Into<String>,
+) -> ElementMetadataResponse {
+    ElementMetadataResponse {
+        available: false,
+        authority,
+        factory_name,
+        long_name: None,
+        klass: None,
+        description: None,
+        plugin_name: None,
+        properties: Vec::new(),
+        pad_templates: Vec::new(),
+        raw_output: None,
+        diagnostic: Some(diagnostic.into()),
+    }
+}
+
+fn parse_gst_inspect_output(
+    authority: MetadataAuthority,
+    factory_name: String,
+    raw_output: String,
+) -> ElementMetadataResponse {
+    let mut metadata = ElementMetadataResponse {
+        available: true,
+        authority,
+        factory_name,
+        long_name: None,
+        klass: None,
+        description: None,
+        plugin_name: None,
+        properties: Vec::new(),
+        pad_templates: Vec::new(),
+        raw_output: Some(raw_output.clone()),
+        diagnostic: None,
+    };
+    let mut section = "";
+    let mut current_pad: Option<ElementPadTemplateMetadata> = None;
+
+    for line in raw_output.lines() {
+        let trimmed = line.trim();
+
+        if trimmed.is_empty() {
+            continue;
+        }
+
+        match trimmed {
+            "Factory Details:" => {
+                flush_pad_template(&mut metadata.pad_templates, &mut current_pad);
+                section = "factory";
+                continue;
+            }
+            "Plugin Details:" => {
+                flush_pad_template(&mut metadata.pad_templates, &mut current_pad);
+                section = "plugin";
+                continue;
+            }
+            "Pad Templates:" => {
+                section = "pads";
+                continue;
+            }
+            "Element Properties:" => {
+                flush_pad_template(&mut metadata.pad_templates, &mut current_pad);
+                section = "properties";
+                continue;
+            }
+            _ => {}
+        }
+
+        match section {
+            "factory" => {
+                if let Some(value) = parse_gst_field(trimmed, "Long-name") {
+                    metadata.long_name = Some(value);
+                } else if let Some(value) = parse_gst_field(trimmed, "Klass") {
+                    metadata.klass = Some(value);
+                } else if let Some(value) = parse_gst_field(trimmed, "Description") {
+                    metadata.description.get_or_insert(value);
+                }
+            }
+            "plugin" => {
+                if let Some(value) = parse_gst_field(trimmed, "Name") {
+                    metadata.plugin_name.get_or_insert(value);
+                } else if let Some(value) = parse_gst_field(trimmed, "Description") {
+                    metadata.description.get_or_insert(value);
+                }
+            }
+            "pads" => {
+                if let Some((direction, name)) = parse_pad_template_heading(trimmed) {
+                    flush_pad_template(&mut metadata.pad_templates, &mut current_pad);
+                    current_pad = Some(ElementPadTemplateMetadata {
+                        direction,
+                        name,
+                        presence: None,
+                    });
+                } else if let Some(value) = parse_gst_field(trimmed, "Availability") {
+                    if let Some(pad) = &mut current_pad {
+                        pad.presence = Some(value);
+                    }
+                }
+            }
+            "properties" => {
+                if let Some(property) = parse_property_line(trimmed) {
+                    metadata.properties.push(property);
+                }
+            }
+            _ => {}
+        }
+    }
+
+    flush_pad_template(&mut metadata.pad_templates, &mut current_pad);
+    metadata
+}
+
+fn parse_gst_field(line: &str, field: &str) -> Option<String> {
+    line.strip_prefix(field)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(ToOwned::to_owned)
+}
+
+fn parse_pad_template_heading(line: &str) -> Option<(String, String)> {
+    let (direction, rest) = line.split_once(" template: ")?;
+    let name = rest.trim().trim_matches('\'').to_string();
+    if direction.is_empty() || name.is_empty() {
+        return None;
+    }
+
+    Some((direction.to_string(), name))
+}
+
+fn parse_property_line(line: &str) -> Option<ElementPropertyMetadata> {
+    let (name, description) = line.split_once(':')?;
+    let name = name.trim();
+
+    if name.is_empty()
+        || name.contains(char::is_whitespace)
+        || matches!(name, "flags" | "Enum" | "Default")
+    {
+        return None;
+    }
+
+    Some(ElementPropertyMetadata {
+        name: name.to_string(),
+        description: Some(description.trim().to_string()).filter(|value| !value.is_empty()),
+    })
+}
+
+fn flush_pad_template(
+    pad_templates: &mut Vec<ElementPadTemplateMetadata>,
+    current_pad: &mut Option<ElementPadTemplateMetadata>,
+) {
+    if let Some(pad) = current_pad.take() {
+        pad_templates.push(pad);
+    }
+}
+
+trait EmptyStringFallback {
+    fn if_empty(self, fallback: &str) -> String;
+}
+
+impl EmptyStringFallback for String {
+    fn if_empty(self, fallback: &str) -> String {
+        if self.is_empty() {
+            fallback.to_string()
+        } else {
+            self
+        }
+    }
 }
