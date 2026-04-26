@@ -64,6 +64,7 @@ function WorkspaceShell({
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(
     document.graph.nodes[0]?.id ?? null,
   )
+  const [selectionRevision, setSelectionRevision] = useState(0)
   const [activePanel, setActivePanel] = useState<WorkspacePanel | null>(null)
   const [metadataByFactory, setMetadataByFactory] = useState<Record<string, MetadataEntry>>({})
 
@@ -140,6 +141,11 @@ function WorkspaceShell({
 
   function togglePanel(panel: WorkspacePanel) {
     setActivePanel((current) => (current === panel ? null : panel))
+  }
+
+  function handleSelectNode(nodeId: string | null) {
+    setSelectedNodeId(nodeId)
+    setSelectionRevision((current) => current + 1)
   }
 
   return (
@@ -219,7 +225,7 @@ function WorkspaceShell({
             <GraphCanvas
               document={document}
               selectedNodeId={selectedNodeId}
-              onSelectNode={setSelectedNodeId}
+              onSelectNode={handleSelectNode}
             />
           </section>
 
@@ -249,6 +255,7 @@ function WorkspaceShell({
                   document={document}
                   isOpen
                   selectedNode={selectedNode}
+                  selectionRevision={selectionRevision}
                   onToggle={() => setActivePanel(null)}
                 />
               ) : null}

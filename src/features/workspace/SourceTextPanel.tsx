@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react'
+import { useLayoutEffect, useRef } from 'react'
 import type {
   PipelineDiagnostic,
   PipelineDocumentViewModel,
@@ -10,6 +10,7 @@ type SourceTextPanelProps = {
   document: PipelineDocumentViewModel
   isOpen: boolean
   selectedNode: PipelineNodeViewModel | null
+  selectionRevision: number
   onToggle: () => void
 }
 
@@ -74,6 +75,7 @@ function SourceTextPanel({
   document,
   isOpen,
   selectedNode,
+  selectionRevision,
   onToggle,
 }: SourceTextPanelProps) {
   const highlightRef = useRef<HTMLElement | null>(null)
@@ -91,32 +93,47 @@ function SourceTextPanel({
       }
     : { before: text, selected: '', after: '' }
 
-  useEffect(() => {
-    const mark = highlightRef.current
-    const scroller = codeScrollRef.current
-    if (!isOpen || !mark || !scroller) {
+  useLayoutEffect(() => {
+    if (!isOpen) {
       return
     }
 
-    const markRect = mark.getBoundingClientRect()
-    const scrollerRect = scroller.getBoundingClientRect()
-    const targetTop = scroller.scrollTop
-      + markRect.top
-      - scrollerRect.top
-      - (scroller.clientHeight / 2)
-      + (markRect.height / 2)
-    const targetLeft = scroller.scrollLeft
-      + markRect.left
-      - scrollerRect.left
-      - (scroller.clientWidth / 2)
-      + (markRect.width / 2)
+    const frameId = window.requestAnimationFrame(() => {
+      const mark = highlightRef.current
+      const scroller = codeScrollRef.current
+      if (!mark || !scroller) {
+        return
+      }
 
-    scroller.scrollTo({
-      left: Math.max(0, targetLeft),
-      top: Math.max(0, targetTop),
-      behavior: 'smooth',
+      const markRect = mark.getBoundingClientRect()
+      const scrollerRect = scroller.getBoundingClientRect()
+      const targetTop = scroller.scrollTop
+        + markRect.top
+        - scrollerRect.top
+        - (scroller.clientHeight / 2)
+        + (markRect.height / 2)
+      const targetLeft = scroller.scrollLeft
+        + markRect.left
+        - scrollerRect.left
+        - (scroller.clientWidth / 2)
+        + (markRect.width / 2)
+
+      scroller.scrollTo({
+        left: Math.max(0, targetLeft),
+        top: Math.max(0, targetTop),
+        behavior: 'auto',
+      })
     })
-  }, [document.id, isOpen, selectedNode?.id, selectedSpan?.end, selectedSpan?.start])
+
+    return () => window.cancelAnimationFrame(frameId)
+  }, [
+    document.id,
+    isOpen,
+    selectedNode?.id,
+    selectedSpan?.end,
+    selectedSpan?.start,
+    selectionRevision,
+  ])
 
   return (
     <section className={isOpen ? 'source-panel is-open' : 'source-panel'}>
