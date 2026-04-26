@@ -105,8 +105,14 @@ function SourceTextPanel({
       - scrollerRect.top
       - (scroller.clientHeight / 2)
       + (markRect.height / 2)
+    const targetLeft = scroller.scrollLeft
+      + markRect.left
+      - scrollerRect.left
+      - (scroller.clientWidth / 2)
+      + (markRect.width / 2)
 
     scroller.scrollTo({
+      left: Math.max(0, targetLeft),
       top: Math.max(0, targetTop),
       behavior: 'smooth',
     })

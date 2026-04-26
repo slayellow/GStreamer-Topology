@@ -751,6 +751,22 @@
   max-height: none;
 }
 
+.workspace-drawer .source-panel {
+  overflow: hidden;
+}
+
+.workspace-drawer .source-panel__body {
+  display: flex;
+  min-height: 0;
+  flex-direction: column;
+}
+
+.workspace-drawer .source-panel__code {
+  min-height: 0;
+  flex: 1 1 auto;
+  overflow: auto;
+}
+
 .workspace-main .canvas-panel {
   min-height: 0;
   padding: 0;
@@ -830,6 +846,8 @@
   border-radius: 24px;
   background: rgba(249, 252, 255, 0.88);
   box-shadow: var(--shadow-soft);
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
 }
 
 .source-panel__toggle {
