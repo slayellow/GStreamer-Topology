@@ -8,6 +8,12 @@ Read this file before starting feature work.
 ## Core Rules
 
 - Work in thin slices with one coherent user-visible outcome.
+- Before substantial feature implementation, consult the Karpathy Guidelines
+  reference requested by the user:
+  `https://github.com/forrestchang/andrej-karpathy-skills/blob/main/skills/karpathy-guidelines/SKILL.md`.
+- Apply the Karpathy Guidelines as execution discipline: surface assumptions,
+  choose the simplest sufficient solution, avoid speculative abstractions,
+  make surgical changes only, and define verifiable success criteria.
 - Anchor every task to the current source of truth in this order:
   `docs/PRD.md`, `docs/ARCHITECTURE.md`, `docs/IMPLEMENTATION_PLAN.md`,
   `docs/REPOSITORY_STRUCTURE.md`, `docs/TECH_SPIKES.md`.

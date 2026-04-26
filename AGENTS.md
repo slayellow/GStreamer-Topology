@@ -42,6 +42,23 @@ If there is a conflict:
 - `docs/PROCESS_POLICY.md` governs execution, verification, and handoff
 - The remaining docs govern scope, architecture, and delivery order
 
+## External Coding Guideline
+
+Before substantial feature implementation, also consult the Karpathy Guidelines:
+
+- https://github.com/forrestchang/andrej-karpathy-skills/blob/main/skills/karpathy-guidelines/SKILL.md
+
+Apply the guideline as a coding discipline:
+- Think before coding: state assumptions, ambiguity, and tradeoffs.
+- Prefer simplicity: implement the minimum code that solves the requested
+  behavior.
+- Make surgical changes: avoid unrelated refactors and only clean up issues
+  created by the current change.
+- Define verifiable success: pair each implementation step with concrete checks.
+
+If the guideline conflicts with a direct user request or this repository's
+process policy, the user request and `docs/PROCESS_POLICY.md` still win.
+
 ## Locked Decisions
 
 These decisions are already made unless the user explicitly changes them:
