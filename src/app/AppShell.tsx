@@ -17,6 +17,16 @@ import type { PipelineDocumentViewModel } from '../graph/types.ts'
 
 type ConnectionMode = 'local' | 'remote'
 
+function localGStreamerFailureStatus(diagnostic?: string | null) {
+  return {
+    detail: diagnostic ?? undefined,
+    message: diagnostic?.includes('Checked ')
+      ? 'Local GStreamer API 경로 미탐지'
+      : diagnostic ?? '로컬 gst-inspect-1.0을 찾지 못했습니다.',
+    state: 'failed' as const,
+  }
+}
+
 function AppShell() {
   const [activeDocument, setActiveDocument] = useState<PipelineDocumentViewModel | null>(null)
   const [connectionMode, setConnectionMode] = useState<ConnectionMode>('local')
@@ -67,8 +77,7 @@ function AppShell() {
                 version: version ?? 'GStreamer version 확인됨',
               }
             : {
-                message: response.diagnostic ?? '로컬 gst-inspect-1.0을 찾지 못했습니다.',
-                state: 'failed',
+                ...localGStreamerFailureStatus(response.diagnostic),
               },
         }))
       })

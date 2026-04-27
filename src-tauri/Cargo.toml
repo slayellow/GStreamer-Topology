@@ -21,6 +21,9 @@ tauri = { version = "=2.0.0", features = [] }
 thiserror = "1"
 ssh2 = { version = "0.9.5", features = ["vendored-openssl"] }
 
+[build-dependencies]
+tauri-build = { version = "=2.0.0", features = [] }
+
 [target.'cfg(target_os = "macos")'.dependencies]
 security-framework = "=3.5.1"
 security-framework-sys = "=2.15.0"

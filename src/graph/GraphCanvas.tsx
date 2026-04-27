@@ -13,7 +13,11 @@ import {
   type NodeMouseHandler,
   type ReactFlowInstance,
 } from '@xyflow/react'
-import { isTauriRuntime, saveExportFile } from '../app/backend.ts'
+import {
+  isTauriRuntime,
+  saveExportFile,
+  suggestExportFilePath,
+} from '../app/backend.ts'
 import { IconButton } from '../components/IconButton.tsx'
 import { TechnicalNode } from './nodes/TechnicalNode.tsx'
 import { toReactFlowEdges, toReactFlowNodes, type TechnicalFlowNode } from './toReactFlow.ts'
@@ -30,6 +34,14 @@ type ExportFormat = 'jpg' | 'png'
 type ExportStatus = {
   tone: 'error' | 'info' | 'success'
   message: string
+}
+
+type ExportDraft = {
+  fileName: string
+  format: ExportFormat
+  isLoadingPath: boolean
+  message?: string
+  path: string
 }
 
 const nodeTypes = {
@@ -132,6 +144,8 @@ function shouldExportNode(node: Node) {
 
   return !(
     node.getAttribute('data-export-exclude') === 'true' ||
+    node.classList.contains('graph-badge') ||
+    node.classList.contains('graph-export-status') ||
     node.classList.contains('react-flow__controls') ||
     node.classList.contains('react-flow__minimap')
   )
@@ -155,6 +169,7 @@ function GraphCanvas({
     readStoredPositions(key),
   )
   const [exportMenuOpen, setExportMenuOpen] = useState(false)
+  const [exportDraft, setExportDraft] = useState<ExportDraft | null>(null)
   const [exportStatus, setExportStatus] = useState<ExportStatus | null>(null)
   const nodes = useMemo(
     () =>
@@ -210,7 +225,33 @@ function GraphCanvas({
       padding: 0.18,
     })
   }
-  const handleExport = async (format: ExportFormat) => {
+  const handleFocusSelected = () => {
+    if (!flow || !selectedNodeId) {
+      return
+    }
+
+    const node = nodes.find((candidate) => candidate.id === selectedNodeId)
+    if (!node) {
+      return
+    }
+
+    const width =
+      typeof node.style?.width === 'number' ? node.style.width : node.width ?? 220
+    const height =
+      typeof node.style?.height === 'number' ? node.style.height : node.height ?? 118
+    const currentZoom = flow.getZoom()
+    const nextZoom = Math.min(Math.max(currentZoom, 0.58), 1.02)
+
+    flow.setCenter(
+      node.position.x + width / 2,
+      node.position.y + height / 2,
+      {
+        duration: 260,
+        zoom: nextZoom,
+      },
+    )
+  }
+  const handleExport = async (format: ExportFormat, explicitPath?: string) => {
     const stage = stageRef.current
     if (!stage) {
       setExportStatus({
@@ -240,24 +281,27 @@ function GraphCanvas({
           : await toJpeg(stage, { ...options, quality: 0.94 })
 
       if (isTauriRuntime()) {
-        const defaultPath = fileName
-        const path = window.prompt(
-          '저장할 파일 경로를 입력하세요. 파일 이름만 입력하면 앱 실행 위치에 저장됩니다.',
-          defaultPath,
-        )
-
-        if (path === null) {
-          setExportStatus({ tone: 'info', message: 'Save canceled.' })
+        const targetPath = explicitPath?.trim() ?? ''
+        if (!targetPath) {
+          setExportStatus({
+            tone: 'info',
+            message: 'Save canceled.',
+          })
           return
         }
 
-        const savedPath = await saveExportFile(
-          path,
-          splitDataUrl(dataUrl).payload,
-        )
+        const savedPath = await saveExportFile(targetPath, splitDataUrl(dataUrl).payload)
+        if (!savedPath) {
+          setExportStatus({
+            tone: 'info',
+            message: 'Save canceled.',
+          })
+          return
+        }
+
         setExportStatus({
           tone: 'success',
-          message: savedPath ? `Saved: ${savedPath}` : 'Save canceled.',
+          message: `Saved: ${savedPath}`,
         })
         return
       }
@@ -274,6 +318,77 @@ function GraphCanvas({
         message: `Export failed: ${error instanceof Error ? error.message : 'unknown error'}`,
       })
     }
+  }
+  const handleOpenExportDraft = async (format: ExportFormat) => {
+    const fileName = `${safeFileStem(document.title)}.${format}`
+    setExportMenuOpen(false)
+
+    if (!isTauriRuntime()) {
+      await handleExport(format)
+      return
+    }
+
+    setExportDraft({
+      fileName,
+      format,
+      isLoadingPath: true,
+      message: undefined,
+      path: '',
+    })
+
+    try {
+      const path = await suggestExportFilePath(fileName)
+      setExportDraft((current) =>
+        current?.format === format
+          ? {
+              ...current,
+              isLoadingPath: false,
+              message: undefined,
+              path,
+            }
+          : current,
+      )
+    } catch (error) {
+      console.error(error)
+      setExportDraft((current) =>
+        current?.format === format
+          ? {
+              ...current,
+              isLoadingPath: false,
+              message: '기본 저장 경로를 만들지 못했습니다. 직접 전체 경로를 입력해 주세요.',
+              path: fileName,
+            }
+          : current,
+      )
+    }
+  }
+  const handleSaveExportDraft = () => {
+    if (!exportDraft) {
+      return
+    }
+
+    if (!exportDraft.path.trim()) {
+      setExportDraft((current) =>
+        current
+          ? {
+              ...current,
+              message: '저장할 파일 경로를 입력해 주세요.',
+            }
+          : current,
+      )
+      return
+    }
+
+    const draft = exportDraft
+    setExportDraft(null)
+    void handleExport(draft.format, draft.path)
+  }
+  const handleCancelExportDraft = () => {
+    setExportDraft(null)
+    setExportStatus({
+      tone: 'info',
+      message: 'Save canceled.',
+    })
   }
 
   return (
@@ -315,7 +430,7 @@ function GraphCanvas({
             zoomable
           />
           <Controls position="bottom-left" showInteractive={false} />
-          <Panel className="graph-badge" position="top-left">
+          <Panel className="graph-badge" data-export-exclude="true" position="top-left">
             <strong>Topology Canvas</strong>
             <span>
               {selectedNode
@@ -323,9 +438,21 @@ function GraphCanvas({
                 : 'Select a node for details.'}
             </span>
           </Panel>
-          <Panel className="graph-badge graph-badge--stats" position="top-right">
+          <Panel
+            className="graph-badge graph-badge--stats"
+            data-export-exclude="true"
+            position="top-right"
+          >
             <span>Nodes {document.graph.nodes.length}</span>
             <span>Edges {document.graph.edges.length}</span>
+            <button
+              className="graph-inline-action"
+              disabled={!selectedNodeId}
+              onClick={handleFocusSelected}
+              type="button"
+            >
+              Focus Selected
+            </button>
             <button className="graph-inline-action" onClick={handleResetLayout} type="button">
               {hasManualLayout ? 'Reset Layout' : 'Auto Layout'}
             </button>
@@ -341,7 +468,7 @@ function GraphCanvas({
                   {(['png', 'jpg'] as ExportFormat[]).map((format) => (
                     <button
                       key={format}
-                      onClick={() => void handleExport(format)}
+                      onClick={() => void handleOpenExportDraft(format)}
                       type="button"
                     >
                       {format.toUpperCase()}
@@ -373,6 +500,56 @@ function GraphCanvas({
           </div>
         ) : null}
       </div>
+
+      {exportDraft ? (
+        <div className="graph-export-modal" role="dialog" aria-modal="true">
+          <div className="graph-export-modal__card">
+            <div>
+              <span className="field-label">Export {exportDraft.format.toUpperCase()}</span>
+              <h3>저장 경로 확인</h3>
+              <p>
+                기본값은 Downloads 아래의 `GStreamer Topology Exports` 폴더입니다.
+                다른 위치를 원하면 전체 파일 경로를 수정해 주세요.
+              </p>
+            </div>
+            <label>
+              <span>파일 경로</span>
+              <input
+                autoFocus
+                disabled={exportDraft.isLoadingPath}
+                onChange={(event) =>
+                  setExportDraft((current) =>
+                    current
+                      ? {
+                          ...current,
+                          message: undefined,
+                          path: event.target.value,
+                        }
+                      : current,
+                  )
+                }
+                placeholder={exportDraft.fileName}
+                value={exportDraft.path}
+              />
+            </label>
+            {exportDraft.message ? (
+              <p className="graph-export-modal__message">{exportDraft.message}</p>
+            ) : null}
+            <div className="graph-export-modal__actions">
+              <button onClick={handleCancelExportDraft} type="button">
+                취소
+              </button>
+              <button
+                disabled={exportDraft.isLoadingPath}
+                onClick={handleSaveExportDraft}
+                type="button"
+              >
+                저장
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </section>
   )
 }

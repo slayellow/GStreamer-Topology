@@ -12,7 +12,9 @@ pub fn run() {
             commands::pipeline::probe_local_gstreamer,
             commands::pipeline::probe_remote_target,
             commands::pipeline::load_remote_pipeline,
-            commands::pipeline::save_export_file
+            commands::pipeline::save_export_file,
+            commands::pipeline::save_export_file_to_downloads,
+            commands::pipeline::suggest_export_file_path
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
