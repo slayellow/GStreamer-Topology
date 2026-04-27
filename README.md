@@ -66,16 +66,31 @@ npm run tauri:build
 보통 `.app`과 `.dmg`가 생성됩니다.
 
 Windows/macOS/Linux 배포 파일은 GitHub Actions의 `Desktop Release` workflow로
-만들 수 있습니다.
+만들 수 있습니다. 팀 배포용 macOS Release는 Apple Developer ID 서명과
+notarization이 완료된 DMG만 사용합니다.
 
 1. GitHub 저장소의 `Actions` 탭에서 `Desktop Release`를 선택합니다.
 2. `Run workflow`를 누르고 `app-v0.1.0` 같은 tag를 입력합니다.
 3. workflow가 끝나면 draft GitHub Release에 Windows/macOS/Linux artifact가
    첨부됩니다.
 
-현재 Release artifact는 unsigned/not notarized 상태입니다. 공개 배포 전에는
-Windows code signing과 macOS notarization을 별도 스프린트에서 다루는 것을
-권장합니다.
+macOS Release note:
+- macOS 팀 배포 artifact는 unsigned/not notarized 상태로 배포하지 않습니다.
+- macOS job은 아래 repository secrets가 없으면 실패합니다.
+  - `APPLE_CERTIFICATE`
+  - `APPLE_CERTIFICATE_PASSWORD`
+  - `APPLE_ID`
+  - `APPLE_PASSWORD`
+  - `APPLE_TEAM_ID`
+  - `KEYCHAIN_PASSWORD`
+- `APPLE_CERTIFICATE`는 `Developer ID Application` 인증서를 `.p12`로 export한
+  뒤 base64로 변환한 값입니다.
+- `APPLE_PASSWORD`는 Apple ID 계정 비밀번호가 아니라 app-specific password입니다.
+- workflow는 macOS `.app`/`.dmg`에 대해 `codesign`, `stapler`, `spctl`
+  검증을 수행합니다.
+- 사용자는 DMG를 다운로드한 뒤 `/Applications`로 복사하고 Finder에서 바로
+  실행할 수 있어야 합니다. `xattr` 제거, 수동 `codesign`, Gatekeeper 비활성화,
+  우클릭 후 열기는 팀 배포 QA 통과 기준이 아닙니다.
 
 Windows release note:
 - Windows 실행 파일은 Tauri build script가 삽입하는 Common Controls v6 manifest에

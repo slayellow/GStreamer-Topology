@@ -78,6 +78,9 @@ Known carry-over:
   proven.
 - macOS `.dmg` launches, but GUI-launched app may not inherit shell `PATH`, so
   `gst-inspect-1.0` can be missed even when it works in Terminal.
+- macOS browser-downloaded DMG can be blocked by Gatekeeper as "damaged" when
+  the app is unsigned/not notarized. This blocks user QA before the app opens
+  and must be treated as a release blocker, not a user workaround.
 
 Sprint 06 outcome:
 - Add deterministic local `gst-inspect-1.0` discovery for common packaged app
@@ -85,6 +88,11 @@ Sprint 06 outcome:
 - Separate "GStreamer not installed" from "installed but not discoverable from
   GUI PATH".
 - Keep Windows launch failure linked to `#30`.
+- Require Developer ID signing and Apple notarization for macOS team
+  distribution DMGs.
+- Block unsigned macOS release uploads by failing the macOS CI job when Apple
+  signing/notarization secrets are missing.
+- Verify macOS `.app` and `.dmg` with `codesign`, `stapler`, and `spctl`.
 
 ### `#25` PNG/JPG export carry-over
 
@@ -185,6 +193,12 @@ For release-related issues:
 - Verify GitHub Actions Release workflow logs when tags are pushed.
 - Do not claim Windows launch success unless Windows 11 user QA or a real
   Windows execution environment confirms it.
+- Do not claim macOS team-distribution success unless the Release DMG is
+  Developer ID signed, notarized, stapled, and Gatekeeper-verifiable after a
+  browser download.
+- `xattr` removal, ad-hoc signing, right-click open, or Gatekeeper bypasses are
+  debugging workarounds only. They are not acceptable user QA steps for team
+  distribution.
 - Do not claim `tauri:dev` success from Vite logs alone. Native window or native
   process evidence is required.
 
