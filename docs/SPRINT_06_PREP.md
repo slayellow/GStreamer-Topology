@@ -88,11 +88,11 @@ Sprint 06 outcome:
 - Separate "GStreamer not installed" from "installed but not discoverable from
   GUI PATH".
 - Keep Windows launch failure linked to `#30`.
-- Require Developer ID signing and Apple notarization for macOS team
-  distribution DMGs.
-- Block unsigned macOS release uploads by failing the macOS CI job when Apple
-  signing/notarization secrets are missing.
-- Verify macOS `.app` and `.dmg` with `codesign`, `stapler`, and `spctl`.
+- Ship Sprint 06 official Release artifacts for Windows/Linux only.
+- Exclude macOS from GitHub Release until Apple Developer Program and Developer
+  ID notarization credentials are available.
+- Use local `npm run tauri:build` output only for macOS internal QA on the
+  development Mac. This is not a team-distribution artifact.
 
 ### `#25` PNG/JPG export carry-over
 
@@ -193,12 +193,10 @@ For release-related issues:
 - Verify GitHub Actions Release workflow logs when tags are pushed.
 - Do not claim Windows launch success unless Windows 11 user QA or a real
   Windows execution environment confirms it.
-- Do not claim macOS team-distribution success unless the Release DMG is
-  Developer ID signed, notarized, stapled, and Gatekeeper-verifiable after a
-  browser download.
-- `xattr` removal, ad-hoc signing, right-click open, or Gatekeeper bypasses are
-  debugging workarounds only. They are not acceptable user QA steps for team
-  distribution.
+- Do not publish macOS GitHub Release artifacts without Developer ID signing and
+  Apple notarization.
+- Local macOS internal QA may use `npm run tauri:build` output, but that result
+  must be reported as `internal local QA only`, not team-distribution verified.
 - Do not claim `tauri:dev` success from Vite logs alone. Native window or native
   process evidence is required.
 
