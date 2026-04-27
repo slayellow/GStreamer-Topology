@@ -1,8 +1,9 @@
+use std::env;
 use std::fs;
 use std::io::Read;
 use std::net::TcpStream;
-use std::path::Path;
-use std::process::Command;
+use std::path::{Path, PathBuf};
+use std::process::{Command, Output};
 
 use base64::{engine::general_purpose, Engine as _};
 use ssh2::Session;
@@ -55,10 +56,47 @@ pub fn save_export_file(path: String, contents: String) -> Result<Option<String>
         return Ok(None);
     }
 
+    write_export_payload(Path::new(path), &contents)?;
+    Ok(Some(path.to_string()))
+}
+
+#[tauri::command]
+pub fn save_export_file_to_downloads(
+    file_name: String,
+    contents: String,
+) -> Result<String, String> {
+    let export_dir = default_export_dir();
+    fs::create_dir_all(&export_dir).map_err(|error| {
+        format!(
+            "failed to create export folder `{}`: {error}",
+            export_dir.display()
+        )
+    })?;
+    let target_path = next_available_export_path(&export_dir, &safe_export_file_name(&file_name)?);
+
+    write_export_payload(&target_path, &contents)?;
+    Ok(target_path.to_string_lossy().into_owned())
+}
+
+#[tauri::command]
+pub fn suggest_export_file_path(file_name: String) -> Result<String, String> {
+    let export_dir = default_export_dir();
+    fs::create_dir_all(&export_dir).map_err(|error| {
+        format!(
+            "failed to create export folder `{}`: {error}",
+            export_dir.display()
+        )
+    })?;
+    let file_name = safe_export_file_name(&file_name)?;
+    Ok(next_available_export_path(&export_dir, &file_name)
+        .to_string_lossy()
+        .into_owned())
+}
+
+fn write_export_payload(path: &Path, contents: &str) -> Result<(), String> {
     let bytes = general_purpose::STANDARD
         .decode(contents)
         .map_err(|error| format!("failed to decode export payload: {error}"))?;
-    let path = Path::new(path);
     if path.exists() && path.is_dir() {
         return Err(format!("export path is a directory: {}", path.display()));
     }
@@ -75,19 +113,219 @@ pub fn save_export_file(path: String, contents: String) -> Result<Option<String>
     fs::write(path, bytes)
         .map_err(|error| format!("failed to save export `{}`: {error}", path.display()))?;
 
-    Ok(Some(path.to_string_lossy().into_owned()))
+    Ok(())
+}
+
+fn default_export_dir() -> PathBuf {
+    home_dir()
+        .map(|path| path.join("Downloads").join("GStreamer Topology Exports"))
+        .unwrap_or_else(|| {
+            env::current_dir()
+                .unwrap_or_else(|_| env::temp_dir())
+                .join("GStreamer Topology Exports")
+        })
+}
+
+fn home_dir() -> Option<PathBuf> {
+    env::var_os("HOME")
+        .or_else(|| env::var_os("USERPROFILE"))
+        .map(PathBuf::from)
+}
+
+fn safe_export_file_name(file_name: &str) -> Result<String, String> {
+    let leaf_name = file_name
+        .trim()
+        .rsplit(|character| character == '/' || character == '\\')
+        .next()
+        .unwrap_or("")
+        .trim();
+
+    if leaf_name.is_empty() {
+        return Err("export file name is empty.".to_string());
+    }
+
+    let sanitized = leaf_name
+        .chars()
+        .map(|character| {
+            if matches!(
+                character,
+                '<' | '>' | ':' | '"' | '/' | '\\' | '|' | '?' | '*'
+            ) {
+                '-'
+            } else {
+                character
+            }
+        })
+        .collect::<String>()
+        .trim_matches(|character| character == '.' || character == ' ')
+        .to_string();
+
+    if sanitized.is_empty() {
+        Err("export file name does not contain usable characters.".to_string())
+    } else {
+        Ok(sanitized)
+    }
+}
+
+fn next_available_export_path(folder: &Path, file_name: &str) -> PathBuf {
+    let initial_path = folder.join(file_name);
+    if !initial_path.exists() {
+        return initial_path;
+    }
+
+    let stem = Path::new(file_name)
+        .file_stem()
+        .and_then(|value| value.to_str())
+        .filter(|value| !value.is_empty())
+        .unwrap_or("gstreamer-topology");
+    let extension = Path::new(file_name)
+        .extension()
+        .and_then(|value| value.to_str())
+        .filter(|value| !value.is_empty());
+
+    for index in 1..1000 {
+        let candidate = match extension {
+            Some(extension) => folder.join(format!("{stem}-{index}.{extension}")),
+            None => folder.join(format!("{stem}-{index}")),
+        };
+
+        if !candidate.exists() {
+            return candidate;
+        }
+    }
+
+    folder.join(format!("{stem}-{}", chrono_like_timestamp()))
+}
+
+fn chrono_like_timestamp() -> String {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|duration| duration.as_secs().to_string())
+        .unwrap_or_else(|_| "now".to_string())
+}
+
+fn gst_inspect_executable_name() -> &'static str {
+    if cfg!(target_os = "windows") {
+        "gst-inspect-1.0.exe"
+    } else {
+        "gst-inspect-1.0"
+    }
+}
+
+fn push_unique_candidate(candidates: &mut Vec<PathBuf>, path: PathBuf) {
+    if !candidates.iter().any(|candidate| candidate == &path) {
+        candidates.push(path);
+    }
+}
+
+fn gst_inspect_command_candidates() -> Vec<PathBuf> {
+    let executable_name = gst_inspect_executable_name();
+    let mut candidates = Vec::new();
+    push_unique_candidate(&mut candidates, PathBuf::from(executable_name));
+
+    if let Some(path_value) = env::var_os("PATH") {
+        for folder in env::split_paths(&path_value) {
+            push_unique_candidate(&mut candidates, folder.join(executable_name));
+        }
+    }
+
+    for variable in [
+        "GSTREAMER_1_0_ROOT_X86_64",
+        "GSTREAMER_1_0_ROOT_MSVC_X86_64",
+        "GSTREAMER_ROOT_X86_64",
+        "GSTREAMER_DIR",
+    ] {
+        if let Some(root) = env::var_os(variable) {
+            let root = PathBuf::from(root);
+            push_unique_candidate(&mut candidates, root.join("bin").join(executable_name));
+            push_unique_candidate(&mut candidates, root.join(executable_name));
+        }
+    }
+
+    if let Some(home) = home_dir() {
+        for folder in ["anaconda3/bin", "miniconda3/bin", "mambaforge/bin"] {
+            push_unique_candidate(&mut candidates, home.join(folder).join(executable_name));
+        }
+    }
+
+    if cfg!(target_os = "macos") {
+        for folder in [
+            "/opt/homebrew/bin",
+            "/usr/local/bin",
+            "/Library/Frameworks/GStreamer.framework/Versions/Current/bin",
+            "/Library/Frameworks/GStreamer.framework/Versions/1.0/bin",
+        ] {
+            push_unique_candidate(&mut candidates, Path::new(folder).join(executable_name));
+        }
+    } else if cfg!(target_os = "windows") {
+        for folder in [
+            r"C:\gstreamer\1.0\msvc_x86_64\bin",
+            r"C:\gstreamer\1.0\mingw_x86_64\bin",
+            r"C:\Program Files\gstreamer\1.0\msvc_x86_64\bin",
+            r"C:\Program Files\gstreamer\1.0\mingw_x86_64\bin",
+        ] {
+            push_unique_candidate(&mut candidates, Path::new(folder).join(executable_name));
+        }
+    } else {
+        for folder in ["/usr/bin", "/usr/local/bin"] {
+            push_unique_candidate(&mut candidates, Path::new(folder).join(executable_name));
+        }
+    }
+
+    candidates
+}
+
+fn resolve_gst_inspect_command() -> Result<PathBuf, String> {
+    let candidates = gst_inspect_command_candidates();
+    let mut diagnostics = Vec::new();
+
+    for candidate in &candidates {
+        match Command::new(candidate).arg("--version").output() {
+            Ok(output) if output.status.success() => return Ok(candidate.clone()),
+            Ok(output) => {
+                let stderr = String::from_utf8_lossy(&output.stderr)
+                    .trim()
+                    .to_string()
+                    .if_empty("version command failed.");
+                diagnostics.push(format!("{}: {stderr}", candidate.display()));
+            }
+            Err(error) => diagnostics.push(format!("{}: {error}", candidate.display())),
+        }
+    }
+
+    Err(format!(
+        "gst-inspect-1.0 is not available. Checked {} candidate path(s): {}",
+        candidates.len(),
+        diagnostics.join("; ")
+    ))
+}
+
+fn run_gst_inspect(args: &[&str]) -> Result<(PathBuf, Output), String> {
+    let command_path = resolve_gst_inspect_command()?;
+    let output = Command::new(&command_path)
+        .args(args)
+        .output()
+        .map_err(|error| {
+            format!(
+                "failed to run `{}` with args `{}`: {error}",
+                command_path.display(),
+                args.join(" ")
+            )
+        })?;
+
+    Ok((command_path, output))
 }
 
 #[tauri::command]
 pub fn probe_local_gstreamer() -> GStreamerProbeResponse {
-    match Command::new("gst-inspect-1.0").arg("--version").output() {
-        Ok(output) if output.status.success() => GStreamerProbeResponse {
+    match run_gst_inspect(&["--version"]) {
+        Ok((_, output)) if output.status.success() => GStreamerProbeResponse {
             available: true,
             authority: MetadataAuthority::Local,
             version_output: Some(String::from_utf8_lossy(&output.stdout).trim().to_string()),
             diagnostic: None,
         },
-        Ok(output) => GStreamerProbeResponse {
+        Ok((_, output)) => GStreamerProbeResponse {
             available: false,
             authority: MetadataAuthority::Local,
             version_output: None,
@@ -102,7 +340,7 @@ pub fn probe_local_gstreamer() -> GStreamerProbeResponse {
             available: false,
             authority: MetadataAuthority::Local,
             version_output: None,
-            diagnostic: Some(format!("gst-inspect-1.0 is not available: {error}")),
+            diagnostic: Some(error),
         },
     }
 }
@@ -118,12 +356,12 @@ pub fn inspect_local_element(factory_name: String) -> ElementMetadataResponse {
         );
     }
 
-    match Command::new("gst-inspect-1.0").arg(&factory_name).output() {
-        Ok(output) if output.status.success() => {
+    match run_gst_inspect(&[factory_name.as_str()]) {
+        Ok((_, output)) if output.status.success() => {
             let raw_output = String::from_utf8_lossy(&output.stdout).into_owned();
             parse_gst_inspect_output(MetadataAuthority::Local, factory_name, raw_output)
         }
-        Ok(output) => unavailable_element_metadata(
+        Ok((_, output)) => unavailable_element_metadata(
             MetadataAuthority::Local,
             factory_name,
             String::from_utf8_lossy(&output.stderr)
@@ -131,11 +369,7 @@ pub fn inspect_local_element(factory_name: String) -> ElementMetadataResponse {
                 .to_string()
                 .if_empty("gst-inspect-1.0 could not inspect this element."),
         ),
-        Err(error) => unavailable_element_metadata(
-            MetadataAuthority::Local,
-            factory_name,
-            format!("gst-inspect-1.0 is not available: {error}"),
-        ),
+        Err(error) => unavailable_element_metadata(MetadataAuthority::Local, factory_name, error),
     }
 }
 
@@ -353,6 +587,15 @@ fn parse_gst_inspect_output(
                 section = "properties";
                 continue;
             }
+            "Element Signals:"
+            | "Element Actions:"
+            | "Children:"
+            | "Pads:"
+            | "Clocking Interaction:" => {
+                flush_pad_template(&mut metadata.pad_templates, &mut current_pad);
+                section = "";
+                continue;
+            }
             _ => {}
         }
 
@@ -390,6 +633,8 @@ fn parse_gst_inspect_output(
             "properties" => {
                 if let Some(property) = parse_property_line(trimmed) {
                     metadata.properties.push(property);
+                } else if let Some(property) = metadata.properties.last_mut() {
+                    update_property_metadata(property, trimmed);
                 }
             }
             _ => {}
@@ -402,7 +647,7 @@ fn parse_gst_inspect_output(
 
 fn parse_gst_field(line: &str, field: &str) -> Option<String> {
     line.strip_prefix(field)
-        .map(str::trim)
+        .map(|value| value.trim().trim_start_matches(':').trim())
         .filter(|value| !value.is_empty())
         .map(ToOwned::to_owned)
 }
@@ -422,6 +667,7 @@ fn parse_property_line(line: &str) -> Option<ElementPropertyMetadata> {
     let name = name.trim();
 
     if name.is_empty()
+        || name.starts_with('(')
         || name.contains(char::is_whitespace)
         || matches!(name, "flags" | "Enum" | "Default")
     {
@@ -431,7 +677,76 @@ fn parse_property_line(line: &str) -> Option<ElementPropertyMetadata> {
     Some(ElementPropertyMetadata {
         name: name.to_string(),
         description: Some(description.trim().to_string()).filter(|value| !value.is_empty()),
+        value_type: None,
+        default_value: None,
+        current_value: None,
     })
+}
+
+fn update_property_metadata(property: &mut ElementPropertyMetadata, line: &str) {
+    if line.is_empty() || line.starts_with("flags:") || line.starts_with('(') {
+        return;
+    }
+
+    if let Some(value) = parse_detail_value(line, "Default:") {
+        property.default_value = Some(value);
+    }
+
+    if let Some(value) = parse_detail_value(line, "Current:") {
+        property.current_value = Some(value);
+    }
+
+    if property.value_type.is_none() {
+        if let Some(value_type) = parse_property_value_type(line) {
+            property.value_type = Some(value_type);
+        }
+    }
+
+    if !line.contains("Default:")
+        && !line.contains("Current:")
+        && !line.starts_with("Enum ")
+        && !line.starts_with("Object of type ")
+    {
+        match &mut property.description {
+            Some(description) if !description.contains(line) => {
+                description.push(' ');
+                description.push_str(line);
+            }
+            None => property.description = Some(line.to_string()),
+            _ => {}
+        }
+    }
+}
+
+fn parse_detail_value(line: &str, marker: &str) -> Option<String> {
+    let start = line.find(marker)? + marker.len();
+    let rest = line[start..].trim();
+    let end = [" Default:", " Current:"]
+        .iter()
+        .filter(|candidate| **candidate != marker)
+        .filter_map(|candidate| rest.find(candidate))
+        .min()
+        .unwrap_or(rest.len());
+    let value = rest[..end].trim();
+    Some(value.trim_end_matches('.').to_string()).filter(|value| !value.is_empty())
+}
+
+fn parse_property_value_type(line: &str) -> Option<String> {
+    if let Some(default_index) = line.find("Default:") {
+        let before_default = line[..default_index].trim();
+        return before_default
+            .split(" Range:")
+            .next()
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(ToOwned::to_owned);
+    }
+
+    if line.starts_with("Enum ") || line.starts_with("Object of type ") {
+        return Some(line.to_string());
+    }
+
+    None
 }
 
 fn flush_pad_template(
@@ -537,5 +852,108 @@ mod tests {
             .expect_err("missing parent should fail");
 
         assert!(error.contains("export folder does not exist"));
+    }
+
+    #[test]
+    fn export_file_name_is_sanitized_for_download_saves() {
+        assert_eq!(
+            safe_export_file_name("C:\\tmp\\bad:name?.png").expect("file name should sanitize"),
+            "bad-name-.png"
+        );
+        assert!(safe_export_file_name("   ").is_err());
+    }
+
+    #[test]
+    fn next_available_export_path_avoids_overwriting_existing_files() {
+        let first_path = unique_export_path("topology.png");
+        fs::write(&first_path, "existing").expect("existing export should be writable");
+        let folder = Path::new(&first_path)
+            .parent()
+            .expect("unique export path should have a parent");
+        let file_name = Path::new(&first_path)
+            .file_name()
+            .and_then(|value| value.to_str())
+            .expect("unique export path should have a file name");
+
+        let next_path = next_available_export_path(folder, file_name);
+
+        assert_ne!(next_path, PathBuf::from(&first_path));
+        assert!(next_path
+            .file_name()
+            .and_then(|value| value.to_str())
+            .unwrap_or_default()
+            .contains("-1"));
+
+        let _ = fs::remove_file(first_path);
+    }
+
+    #[test]
+    fn parse_gst_inspect_output_collects_property_details() {
+        let raw_output = r#"
+Factory Details:
+  Long-name                Video test source
+  Klass                    Source/Video
+  Description              Creates a test video stream
+
+Plugin Details:
+  Name                     videotestsrc
+
+Pad Templates:
+  SRC template: 'src'
+    Availability: Always
+
+Element Properties:
+  name                : The name of the object
+                        flags: readable, writable
+                        String. Default: "videotestsrc0"
+  pattern             : Type of test pattern to generate
+                        flags: readable, writable
+                        Enum "GstVideoTestSrcPattern" Default: 0, "smpte"
+                           (0): smpte            - SMPTE 100% color bars
+  blocksize           : Size in bytes to read per buffer (-1 = default)
+                        flags: readable, writable
+                        Unsigned Integer. Range: 0 - 4294967295 Default: 4096
+
+Element Signals:
+  no-more-pads ()
+"#
+        .to_string();
+
+        let metadata = parse_gst_inspect_output(
+            MetadataAuthority::Remote,
+            "videotestsrc".to_string(),
+            raw_output,
+        );
+
+        assert_eq!(metadata.plugin_name.as_deref(), Some("videotestsrc"));
+        assert_eq!(metadata.pad_templates.len(), 1);
+        assert_eq!(metadata.properties.len(), 3);
+        assert_eq!(metadata.properties[0].name, "name");
+        assert_eq!(
+            metadata.properties[0].value_type.as_deref(),
+            Some("String.")
+        );
+        assert_eq!(
+            metadata.properties[0].default_value.as_deref(),
+            Some("\"videotestsrc0\"")
+        );
+        assert_eq!(metadata.properties[1].name, "pattern");
+        assert_eq!(
+            metadata.properties[1].value_type.as_deref(),
+            Some("Enum \"GstVideoTestSrcPattern\"")
+        );
+        assert_eq!(
+            metadata.properties[1].default_value.as_deref(),
+            Some("0, \"smpte\"")
+        );
+        assert_eq!(metadata.properties[2].name, "blocksize");
+        assert_eq!(
+            metadata.properties[2].value_type.as_deref(),
+            Some("Unsigned Integer.")
+        );
+        assert_eq!(
+            metadata.properties[2].default_value.as_deref(),
+            Some("4096")
+        );
     }
 }

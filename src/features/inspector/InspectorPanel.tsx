@@ -88,6 +88,14 @@ function metadataAuthorityLabel(metadata: ElementMetadataResponse) {
   return metadata.authority === 'remote' ? '원격 GStreamer' : '로컬 GStreamer'
 }
 
+function metadataPropertySummary(property: ElementMetadataResponse['properties'][number]) {
+  return [
+    property.value_type ? `Type: ${property.value_type}` : null,
+    property.default_value ? `Default: ${property.default_value}` : null,
+    property.current_value ? `Current: ${property.current_value}` : null,
+  ].filter((value): value is string => Boolean(value))
+}
+
 function InspectorPanel({ document, metadata, selectedNode }: InspectorPanelProps) {
   if (!selectedNode) {
     return (
@@ -109,6 +117,7 @@ function InspectorPanel({ document, metadata, selectedNode }: InspectorPanelProp
   }
 
   const connections = findConnections(document, selectedNode)
+  const metadataProperties = metadata?.data?.properties ?? []
 
   return (
     <aside className="workspace-panel inspector-panel">
@@ -209,11 +218,18 @@ function InspectorPanel({ document, metadata, selectedNode }: InspectorPanelProp
 
             {metadata.data.properties.length ? (
               <div className="metadata-subsection">
-                <span className="field-label">GStreamer properties</span>
+                <span className="field-label">
+                  GStreamer properties {metadataProperties.length}
+                </span>
                 <ul className="metadata-property-list">
-                  {metadata.data.properties.slice(0, 8).map((property) => (
+                  {metadataProperties.map((property) => (
                     <li key={property.name}>
-                      <span>{property.name}</span>
+                      <div className="metadata-property-list__header">
+                        <span>{property.name}</span>
+                        {metadataPropertySummary(property).map((summary) => (
+                          <code key={summary}>{summary}</code>
+                        ))}
+                      </div>
                       {property.description ? <small>{property.description}</small> : null}
                     </li>
                   ))}

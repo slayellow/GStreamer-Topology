@@ -1,6 +1,7 @@
 export type RuntimeStatusState = 'checking' | 'connected' | 'failed' | 'idle' | 'unknown'
 
 export type RuntimeEndpointStatus = {
+  detail?: string
   host?: string
   message?: string
   port?: number

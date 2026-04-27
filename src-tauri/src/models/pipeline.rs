@@ -181,6 +181,9 @@ pub struct GStreamerProbeResponse {
 pub struct ElementPropertyMetadata {
     pub name: String,
     pub description: Option<String>,
+    pub value_type: Option<String>,
+    pub default_value: Option<String>,
+    pub current_value: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]

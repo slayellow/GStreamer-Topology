@@ -29,7 +29,9 @@ function ConnectionBadge({ label, status }: ConnectionBadgeProps) {
   return (
     <span
       className={`connection-badge connection-badge--${status.state}`}
-      title={[label, endpoint, status.version, status.message].filter(Boolean).join(' · ')}
+      title={[label, endpoint, status.version, status.message, status.detail]
+        .filter(Boolean)
+        .join(' · ')}
     >
       <span className="status-dot" aria-hidden />
       <span className="connection-badge__copy">

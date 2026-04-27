@@ -90,8 +90,11 @@ export type GStreamerProbeResponse = {
 }
 
 export type ElementPropertyMetadata = {
-  name: string
+  current_value?: string | null
+  default_value?: string | null
   description?: string | null
+  name: string
+  value_type?: string | null
 }
 
 export type ElementPadTemplateMetadata = {
@@ -131,6 +134,17 @@ export async function saveExportFile(
   contents: string,
 ) {
   return invoke<string | null>('save_export_file', { path, contents })
+}
+
+export async function saveExportFileToDownloads(
+  fileName: string,
+  contents: string,
+) {
+  return invoke<string>('save_export_file_to_downloads', { fileName, contents })
+}
+
+export async function suggestExportFilePath(fileName: string) {
+  return invoke<string>('suggest_export_file_path', { fileName })
 }
 
 export async function probeLocalGStreamer() {

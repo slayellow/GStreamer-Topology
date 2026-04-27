@@ -100,6 +100,110 @@
   font-weight: 800;
 }
 
+.graph-inline-action:disabled {
+  cursor: not-allowed;
+  opacity: 0.44;
+}
+
+.graph-export-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: rgba(4, 16, 30, 0.28);
+  backdrop-filter: blur(10px);
+}
+
+.graph-export-modal__card {
+  width: min(720px, 100%);
+  display: grid;
+  gap: 18px;
+  padding: 24px;
+  border: 1px solid rgba(129, 161, 196, 0.36);
+  border-radius: 28px;
+  background:
+    linear-gradient(145deg, rgba(255, 255, 255, 0.96), rgba(236, 247, 255, 0.92));
+  box-shadow: 0 28px 80px rgba(16, 46, 82, 0.24);
+}
+
+.graph-export-modal__card h3 {
+  margin: 6px 0 4px;
+  color: var(--ink-strong);
+  font-size: 1.28rem;
+}
+
+.graph-export-modal__card p {
+  margin: 0;
+  color: var(--text-soft);
+  line-height: 1.55;
+}
+
+.graph-export-modal__card label {
+  display: grid;
+  gap: 8px;
+  color: var(--text-muted);
+  font-size: 0.8rem;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+}
+
+.graph-export-modal__card input {
+  width: 100%;
+  border: 1px solid rgba(133, 160, 190, 0.38);
+  border-radius: 16px;
+  padding: 14px 16px;
+  background: rgba(255, 255, 255, 0.84);
+  color: var(--ink-strong);
+  font: inherit;
+  font-family: 'JetBrains Mono', 'SFMono-Regular', Consolas, monospace;
+  outline: none;
+}
+
+.graph-export-modal__card input:focus {
+  border-color: rgba(21, 141, 255, 0.7);
+  box-shadow: 0 0 0 4px rgba(21, 141, 255, 0.12);
+}
+
+.graph-export-modal__message {
+  padding: 10px 12px;
+  border: 1px solid rgba(202, 73, 67, 0.18);
+  border-radius: 14px;
+  background: rgba(255, 241, 240, 0.78);
+  color: #a73d3a;
+  font-size: 0.86rem;
+  font-weight: 800;
+}
+
+.graph-export-modal__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+.graph-export-modal__actions button {
+  border: 1px solid rgba(133, 160, 190, 0.4);
+  border-radius: 999px;
+  padding: 10px 18px;
+  background: rgba(255, 255, 255, 0.76);
+  color: var(--ink-strong);
+  cursor: pointer;
+  font-weight: 900;
+}
+
+.graph-export-modal__actions button:last-child {
+  border-color: transparent;
+  background: linear-gradient(135deg, #158dff, #72d5ff);
+  color: #ffffff;
+  box-shadow: 0 12px 28px rgba(21, 141, 255, 0.24);
+}
+
+.graph-export-modal__actions button:disabled {
+  cursor: wait;
+  opacity: 0.55;
+}
+
 .graph-export {
   position: relative;
 }
