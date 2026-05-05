@@ -79,6 +79,12 @@ Branch workflow:
 Sprint closeout:
 - Move completed issues to `Done` only after code is committed, pushed, and the
   user-visible QA path has passed.
+- Before calling a sprint complete, trigger the `Desktop Release` workflow for
+  the sprint branch and confirm the draft Release contains Windows and Linux
+  installer assets plus checksum files.
+- Record the Release URL, workflow run URL, and generated asset names in the
+  sprint PR or handoff. If the Release workflow fails or is still running,
+  report the sprint as `release unverified`, not complete.
 - The user is expected to inspect `In Progress` issues in the active sprint
   Project, run the checklist in each issue, move passing issues to `Done`, and
   leave comments on issues that fail.

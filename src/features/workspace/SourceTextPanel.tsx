@@ -16,6 +16,7 @@ type SourceTextPanelProps = {
   isOpen: boolean
   selectedNode: PipelineNodeViewModel | null
   selectionRevision: number
+  onSelectNodeSource: (nodeId: string) => void
   onToggle: () => void
 }
 
@@ -76,12 +77,87 @@ function syntaxDiagnostics(diagnostics: PipelineDiagnostic[]) {
   return diagnostics.filter((diagnostic) => diagnostic.severity !== 'info')
 }
 
+type SourceNodeSpan = {
+  end: number
+  nodeId: string
+  selected: string
+  start: number
+}
+
+type SourceTextSegment = {
+  end: number
+  isHighlighted: boolean
+  nodeId?: string
+  start: number
+  text: string
+}
+
+function nodeSourceSpans(text: string, nodes: PipelineNodeViewModel[]) {
+  return nodes
+    .map((node) => {
+      const span = validSpan(text, node.sourceSpan)
+      return span
+        ? {
+            ...span,
+            nodeId: node.id,
+          }
+        : null
+    })
+    .filter((span): span is SourceNodeSpan => Boolean(span))
+    .sort((first, second) => first.start - second.start || first.end - second.end)
+}
+
+function sourceTextSegments(
+  text: string,
+  nodes: SourceNodeSpan[],
+  highlightedSpan: ReturnType<typeof validSpan>,
+) {
+  const boundaries = new Set([0, text.length])
+
+  for (const node of nodes) {
+    boundaries.add(node.start)
+    boundaries.add(node.end)
+  }
+
+  if (highlightedSpan) {
+    boundaries.add(highlightedSpan.start)
+    boundaries.add(highlightedSpan.end)
+  }
+
+  const sortedBoundaries = [...boundaries].sort((first, second) => first - second)
+  const segments: SourceTextSegment[] = []
+
+  for (let index = 0; index < sortedBoundaries.length - 1; index += 1) {
+    const start = sortedBoundaries[index]
+    const end = sortedBoundaries[index + 1]
+    if (start >= end) {
+      continue
+    }
+
+    const node = nodes.find((candidate) => start >= candidate.start && end <= candidate.end)
+    segments.push({
+      end,
+      isHighlighted: Boolean(
+        highlightedSpan
+          && start >= highlightedSpan.start
+          && end <= highlightedSpan.end,
+      ),
+      nodeId: node?.nodeId,
+      start,
+      text: text.slice(start, end),
+    })
+  }
+
+  return segments
+}
+
 function SourceTextPanel({
   document,
   focusedSource,
   isOpen,
   selectedNode,
   selectionRevision,
+  onSelectNodeSource,
   onToggle,
 }: SourceTextPanelProps) {
   const highlightRef = useRef<HTMLElement | null>(null)
@@ -89,16 +165,14 @@ function SourceTextPanel({
   const text = document.normalizedText
   const activeSpan = focusedSource?.span ?? selectedNode?.sourceSpan
   const selectedSpan = validSpan(text, activeSpan)
+  const clickableSpans = nodeSourceSpans(text, document.graph.nodes)
+  const textSegments = sourceTextSegments(text, clickableSpans, selectedSpan)
+  const highlightSegmentKey = textSegments.find((segment) => segment.isHighlighted)
+  const firstHighlightKey = highlightSegmentKey
+    ? `${highlightSegmentKey.start}-${highlightSegmentKey.end}`
+    : null
   const diagnostics = syntaxDiagnostics(document.diagnostics)
   const showHighlightFallback = Boolean((selectedNode || focusedSource) && !selectedSpan)
-
-  const highlightedText = selectedSpan
-    ? {
-        before: text.slice(0, selectedSpan.start),
-        selected: selectedSpan.selected,
-        after: text.slice(selectedSpan.end),
-      }
-    : { before: text, selected: '', after: '' }
 
   useLayoutEffect(() => {
     if (!isOpen) {
@@ -184,11 +258,45 @@ function SourceTextPanel({
 
           <pre className="source-panel__code" ref={codeScrollRef}>
             <code>
-              <span>{highlightedText.before}</span>
-              {highlightedText.selected ? (
-                <mark ref={highlightRef}>{highlightedText.selected}</mark>
-              ) : null}
-              <span>{highlightedText.after}</span>
+              {textSegments.map((segment) => {
+                const segmentKey = `${segment.start}-${segment.end}`
+                const content = segment.isHighlighted ? (
+                  <mark ref={segmentKey === firstHighlightKey ? highlightRef : undefined}>
+                    {segment.text}
+                  </mark>
+                ) : (
+                  segment.text
+                )
+
+                if (segment.nodeId) {
+                  const nodeId = segment.nodeId
+                  return (
+                    <span
+                      className={[
+                        'source-panel__node-token',
+                        segment.isHighlighted ? 'is-highlighted' : '',
+                      ].filter(Boolean).join(' ')}
+                      key={segmentKey}
+                      onClick={() => onSelectNodeSource(nodeId)}
+                      onKeyDown={(event) => {
+                        if (event.key !== 'Enter' && event.key !== ' ') {
+                          return
+                        }
+
+                        event.preventDefault()
+                        onSelectNodeSource(nodeId)
+                      }}
+                      role="button"
+                      tabIndex={0}
+                      title="캔버스에서 이 Element 선택"
+                    >
+                      {content}
+                    </span>
+                  )
+                }
+
+                return <span key={segmentKey}>{content}</span>
+              })}
             </code>
           </pre>
         </div>

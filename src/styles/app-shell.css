@@ -979,6 +979,33 @@
   outline: 1px solid rgba(76, 196, 255, 0.7);
 }
 
+.source-panel__node-token {
+  color: inherit;
+  cursor: pointer;
+  font: inherit;
+  text-decoration: underline;
+  text-decoration-color: rgba(118, 199, 255, 0.52);
+  text-decoration-style: dotted;
+  text-underline-offset: 0.2em;
+  white-space: inherit;
+}
+
+.source-panel__node-token:hover,
+.source-panel__node-token:focus-visible {
+  border-radius: 5px;
+  background: rgba(76, 196, 255, 0.16);
+  color: #ffffff;
+  outline: none;
+}
+
+.source-panel__node-token:focus-visible {
+  box-shadow: 0 0 0 2px rgba(76, 196, 255, 0.54);
+}
+
+.source-panel__node-token.is-highlighted {
+  text-decoration-color: rgba(76, 196, 255, 0.94);
+}
+
 .diagnostics-panel__toggle {
   width: 100%;
   border: 0;

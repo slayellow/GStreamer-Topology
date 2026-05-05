@@ -1,5 +1,5 @@
 import { Handle, Position, type NodeProps } from '@xyflow/react'
-import type { TechnicalFlowNode } from '../toReactFlow.ts'
+import type { TechnicalFlowNode, TechnicalNodePort } from '../toReactFlow.ts'
 
 function nodeKindLabel(kind: string) {
   switch (kind) {
@@ -16,7 +16,48 @@ function nodeKindLabel(kind: string) {
   }
 }
 
+function portTop(index: number, total: number) {
+  if (total <= 1) {
+    return '50%'
+  }
+
+  return `${18 + (64 * index) / (total - 1)}%`
+}
+
+function renderPort(port: TechnicalNodePort, index: number, total: number, isSelected: boolean) {
+  const isSource = port.side === 'source'
+  const top = portTop(index, total)
+  const position = isSource ? Position.Right : Position.Left
+  const type = isSource ? 'source' : 'target'
+  const sideClass = isSource ? 'source' : 'sink'
+  const stateClass = port.isConnectedToSelection ? 'is-connected' : ''
+
+  return (
+    <span
+      aria-hidden
+      className={[
+        'technical-node__port',
+        `technical-node__port--${sideClass}`,
+        stateClass,
+        isSelected ? 'is-node-selected' : '',
+      ].filter(Boolean).join(' ')}
+      key={port.id}
+      style={{ top }}
+    >
+      <Handle
+        className="technical-node__handle"
+        id={port.id}
+        position={position}
+        type={type}
+      />
+    </span>
+  )
+}
+
 function TechnicalNode({ data }: NodeProps<TechnicalFlowNode>) {
+  const sourcePorts = data.ports.filter((port) => port.side === 'source')
+  const sinkPorts = data.ports.filter((port) => port.side === 'target')
+
   return (
     <div
       className={[
@@ -28,8 +69,11 @@ function TechnicalNode({ data }: NodeProps<TechnicalFlowNode>) {
         .filter(Boolean)
         .join(' ')}
     >
-      <Handle className="technical-node__handle" position={Position.Left} type="target" />
-      <span aria-hidden className="technical-node__port-dot technical-node__port-dot--sink" />
+      <span className="technical-node__port-rail technical-node__port-rail--sink">
+        {sinkPorts.map((port, index) =>
+          renderPort(port, index, sinkPorts.length, data.isSelected),
+        )}
+      </span>
       <div className="technical-node__eyebrow">
         <span>{nodeKindLabel(data.kind)}</span>
         <span className="technical-node__drag-handle" title="위치 이동">
@@ -44,8 +88,11 @@ function TechnicalNode({ data }: NodeProps<TechnicalFlowNode>) {
           <span key={tag}>{tag}</span>
         ))}
       </div>
-      <span aria-hidden className="technical-node__port-dot technical-node__port-dot--src" />
-      <Handle className="technical-node__handle" position={Position.Right} type="source" />
+      <span className="technical-node__port-rail technical-node__port-rail--source">
+        {sourcePorts.map((port, index) =>
+          renderPort(port, index, sourcePorts.length, data.isSelected),
+        )}
+      </span>
     </div>
   )
 }

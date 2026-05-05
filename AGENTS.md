@@ -106,6 +106,18 @@ Do not repeat the `tauri:dev` verification mistake from `2026-04-22`.
 - If full launch cannot be confirmed, report `launch unverified`, not
   `working`.
 
+Do not repeat the Sprint 07 closeout release omission.
+
+- A sprint is not fully closed just because user QA passed, issues are `Done`,
+  and the PR is opened.
+- Before closeout, trigger the `Desktop Release` workflow from the sprint
+  branch and confirm Windows and Linux installer assets exist in the draft
+  Release.
+- Record the workflow run URL, Release URL, installer names, and checksum files
+  in the PR or handoff.
+- If installer generation is incomplete, report `release unverified`, not
+  `complete`.
+
 ## Primary Samples
 
 Use these as canonical fixtures during parser and workspace development:
