@@ -30,7 +30,7 @@ Setup completed:
 - `#25`, `#33`, `#34`, `#35`, and `#36` are on the `Sprint 07` Project.
 - `#25`, `#33`, `#34`, `#35`, and `#36` have the `sprint-07` label.
 - Sprint-specific planning comments were added to the active issues in Korean.
-- `#34` and `#35` are active implementation items.
+- `#25`, `#33`, `#34`, and `#35` are active implementation items.
 - `#36` is an Optional design/technical review item, not a fake Update button
   implementation.
 
@@ -66,6 +66,8 @@ Sprint 07 outcome:
 - PNG and JPG files are non-empty and include off-screen graph content.
 - Canvas controls, minimap, status badges, and other UI chrome are excluded
   from the exported image.
+- Very large exports may be scaled down to avoid browser canvas size and memory
+  limits, while preserving the full graph bounds.
 - `fixtures/pipelines/26_release_record_smoothing.pld` and
   `fixtures/pipelines/27_pipmux.pld` are used as large-graph verification
   samples.
@@ -83,6 +85,8 @@ User evidence:
 Sprint 07 outcome:
 - Windows Release builds run as GUI apps without a console window.
 - Start Menu shortcut and direct exe launch both open only the GUI.
+- The release workflow validates the built Windows exe subsystem so console
+  subsystem regressions fail CI before publishing.
 - A fallback way to collect diagnostics is documented because the console will
   no longer be visible.
 

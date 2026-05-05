@@ -11,6 +11,7 @@ import {
   type Edge,
   type NodeChange,
   type NodeMouseHandler,
+  type Node as FlowNode,
   type ReactFlowInstance,
 } from '@xyflow/react'
 import {
@@ -44,9 +45,22 @@ type ExportDraft = {
   path: string
 }
 
+type GraphBounds = {
+  height: number
+  maxX: number
+  maxY: number
+  minX: number
+  minY: number
+  width: number
+}
+
 const nodeTypes = {
   technical: TechnicalNode,
 }
+
+const EXPORT_PADDING = 180
+const MAX_EXPORT_DIMENSION = 14000
+const MAX_EXPORT_PIXELS = 42_000_000
 
 const minimapToneColors: Record<TechnicalFlowNode['data']['tone'], string> = {
   ai: '#2ec9d1',
@@ -137,7 +151,7 @@ function downloadFromBrowser(dataUrl: string, fileName: string) {
   link.remove()
 }
 
-function shouldExportNode(node: Node) {
+function shouldExportNode(node: globalThis.Node) {
   if (!(node instanceof Element)) {
     return true
   }
@@ -149,6 +163,190 @@ function shouldExportNode(node: Node) {
     node.classList.contains('react-flow__controls') ||
     node.classList.contains('react-flow__minimap')
   )
+}
+
+function nextAnimationFrame() {
+  return new Promise<void>((resolve) => {
+    window.requestAnimationFrame(() => resolve())
+  })
+}
+
+function nodeDimension(node: FlowNode) {
+  const styleWidth = typeof node.style?.width === 'number' ? node.style.width : undefined
+  const styleHeight = typeof node.style?.height === 'number' ? node.style.height : undefined
+
+  return {
+    height: styleHeight ?? node.height ?? 118,
+    width: styleWidth ?? node.width ?? 220,
+  }
+}
+
+function includeEdgeLabelBounds(bounds: GraphBounds, nodes: FlowNode[], edges: Edge[]) {
+  const nodeById = new Map(nodes.map((node) => [node.id, node]))
+
+  return edges.reduce((current, edge) => {
+    if (typeof edge.label !== 'string' || !edge.label.trim()) {
+      return current
+    }
+
+    const source = nodeById.get(edge.source)
+    const target = nodeById.get(edge.target)
+    if (!source || !target) {
+      return current
+    }
+
+    const sourceDimensions = nodeDimension(source)
+    const targetDimensions = nodeDimension(target)
+    const sourceCenter = {
+      x: source.position.x + sourceDimensions.width / 2,
+      y: source.position.y + sourceDimensions.height / 2,
+    }
+    const targetCenter = {
+      x: target.position.x + targetDimensions.width / 2,
+      y: target.position.y + targetDimensions.height / 2,
+    }
+    const labelCenter = {
+      x: (sourceCenter.x + targetCenter.x) / 2,
+      y: (sourceCenter.y + targetCenter.y) / 2,
+    }
+    const labelWidth = Math.max(120, edge.label.length * 7.6 + 56)
+    const labelHeight = 44
+    const nextMinX = Math.min(current.minX, labelCenter.x - labelWidth / 2)
+    const nextMaxX = Math.max(current.maxX, labelCenter.x + labelWidth / 2)
+    const nextMinY = Math.min(current.minY, labelCenter.y - labelHeight / 2)
+    const nextMaxY = Math.max(current.maxY, labelCenter.y + labelHeight / 2)
+
+    return {
+      ...current,
+      height: nextMaxY - nextMinY,
+      maxX: nextMaxX,
+      maxY: nextMaxY,
+      minX: nextMinX,
+      minY: nextMinY,
+      width: nextMaxX - nextMinX,
+    }
+  }, bounds)
+}
+
+function getGraphBounds(nodes: FlowNode[], edges: Edge[]): GraphBounds | null {
+  if (!nodes.length) {
+    return null
+  }
+
+  const initial = {
+    maxX: Number.NEGATIVE_INFINITY,
+    maxY: Number.NEGATIVE_INFINITY,
+    minX: Number.POSITIVE_INFINITY,
+    minY: Number.POSITIVE_INFINITY,
+  }
+
+  const bounds = nodes.reduce((current, node) => {
+    const dimensions = nodeDimension(node)
+    return {
+      maxX: Math.max(current.maxX, node.position.x + dimensions.width),
+      maxY: Math.max(current.maxY, node.position.y + dimensions.height),
+      minX: Math.min(current.minX, node.position.x),
+      minY: Math.min(current.minY, node.position.y),
+    }
+  }, initial)
+
+  return includeEdgeLabelBounds({
+    ...bounds,
+    height: bounds.maxY - bounds.minY,
+    width: bounds.maxX - bounds.minX,
+  }, nodes, edges)
+}
+
+function exportScale(width: number, height: number) {
+  const dimensionScale = Math.min(
+    MAX_EXPORT_DIMENSION / Math.max(width, 1),
+    MAX_EXPORT_DIMENSION / Math.max(height, 1),
+  )
+  const areaScale = Math.sqrt(MAX_EXPORT_PIXELS / Math.max(width * height, 1))
+
+  return Math.min(1, dimensionScale, areaScale)
+}
+
+async function captureFullTopologyImage({
+  format,
+  edges,
+  nodes,
+  stage,
+}: {
+  format: ExportFormat
+  edges: Edge[]
+  nodes: TechnicalFlowNode[]
+  stage: HTMLDivElement
+}) {
+  const viewport = stage.querySelector<HTMLElement>('.react-flow__viewport')
+  const flowRoot = stage.querySelector<HTMLElement>('.react-flow')
+  const bounds = getGraphBounds(nodes, edges)
+
+  if (!viewport || !flowRoot || !bounds) {
+    throw new Error('full topology export target is not ready')
+  }
+
+  const rawWidth = bounds.width + EXPORT_PADDING * 2
+  const rawHeight = bounds.height + EXPORT_PADDING * 2
+  const scale = exportScale(rawWidth, rawHeight)
+  const exportWidth = Math.ceil(rawWidth * scale)
+  const exportHeight = Math.ceil(rawHeight * scale)
+  const translateX = (EXPORT_PADDING - bounds.minX) * scale
+  const translateY = (EXPORT_PADDING - bounds.minY) * scale
+
+  const previousStageStyle = {
+    height: stage.style.height,
+    overflow: stage.style.overflow,
+    width: stage.style.width,
+  }
+  const previousFlowStyle = {
+    height: flowRoot.style.height,
+    width: flowRoot.style.width,
+  }
+  const previousViewportStyle = {
+    transform: viewport.style.transform,
+    transformOrigin: viewport.style.transformOrigin,
+  }
+
+  try {
+    stage.classList.add('is-exporting-full')
+    stage.style.width = `${exportWidth}px`
+    stage.style.height = `${exportHeight}px`
+    stage.style.overflow = 'visible'
+    flowRoot.style.width = `${exportWidth}px`
+    flowRoot.style.height = `${exportHeight}px`
+    viewport.style.transform = `translate(${translateX}px, ${translateY}px) scale(${scale})`
+    viewport.style.transformOrigin = '0 0'
+
+    await nextAnimationFrame()
+
+    const options = {
+      backgroundColor: '#eff6fd',
+      cacheBust: true,
+      filter: shouldExportNode,
+      height: exportHeight,
+      pixelRatio: 1,
+      style: {
+        height: `${exportHeight}px`,
+        overflow: 'visible',
+        width: `${exportWidth}px`,
+      },
+      width: exportWidth,
+    }
+
+    return format === 'png'
+      ? toPng(stage, options)
+      : toJpeg(stage, { ...options, quality: 0.94 })
+  } finally {
+    stage.classList.remove('is-exporting-full')
+    stage.style.width = previousStageStyle.width
+    stage.style.height = previousStageStyle.height
+    stage.style.overflow = previousStageStyle.overflow
+    flowRoot.style.width = previousFlowStyle.width
+    flowRoot.style.height = previousFlowStyle.height
+    viewport.style.transform = previousViewportStyle.transform
+    viewport.style.transformOrigin = previousViewportStyle.transformOrigin
+  }
 }
 
 function GraphCanvas({
@@ -170,6 +368,7 @@ function GraphCanvas({
   )
   const [exportMenuOpen, setExportMenuOpen] = useState(false)
   const [exportDraft, setExportDraft] = useState<ExportDraft | null>(null)
+  const [isExportingFullGraph, setIsExportingFullGraph] = useState(false)
   const [exportStatus, setExportStatus] = useState<ExportStatus | null>(null)
   const nodes = useMemo(
     () =>
@@ -264,21 +463,20 @@ function GraphCanvas({
     setExportMenuOpen(false)
     setExportStatus({
       tone: 'info',
-      message: `Exporting ${format.toUpperCase()}...`,
+      message: `Exporting full topology ${format.toUpperCase()}...`,
     })
 
     try {
       const fileName = `${safeFileStem(document.title)}.${format}`
-      const options = {
-        backgroundColor: '#eff6fd',
-        cacheBust: true,
-        filter: shouldExportNode,
-        pixelRatio: 2,
-      }
-      const dataUrl =
-        format === 'png'
-          ? await toPng(stage, options)
-          : await toJpeg(stage, { ...options, quality: 0.94 })
+      setIsExportingFullGraph(true)
+      await nextAnimationFrame()
+      await nextAnimationFrame()
+      const dataUrl = await captureFullTopologyImage({
+        edges,
+        format,
+        nodes,
+        stage,
+      })
 
       if (isTauriRuntime()) {
         const targetPath = explicitPath?.trim() ?? ''
@@ -317,6 +515,8 @@ function GraphCanvas({
         tone: 'error',
         message: `Export failed: ${error instanceof Error ? error.message : 'unknown error'}`,
       })
+    } finally {
+      setIsExportingFullGraph(false)
     }
   }
   const handleOpenExportDraft = async (format: ExportFormat) => {
@@ -407,7 +607,7 @@ function GraphCanvas({
           onNodeDragStop={handleNodeDragStop}
           onNodesChange={handleNodesChange}
           onPaneClick={() => onSelectNode(null)}
-          onlyRenderVisibleElements
+          onlyRenderVisibleElements={!isExportingFullGraph}
           proOptions={{ hideAttribution: true }}
         >
           <Background
@@ -508,8 +708,9 @@ function GraphCanvas({
               <span className="field-label">Export {exportDraft.format.toUpperCase()}</span>
               <h3>저장 경로 확인</h3>
               <p>
-                기본값은 Downloads 아래의 `GStreamer Topology Exports` 폴더입니다.
-                다른 위치를 원하면 전체 파일 경로를 수정해 주세요.
+                전체 토폴로지 영역을 이미지로 저장합니다. 기본값은 Downloads 아래의
+                `GStreamer Topology Exports` 폴더입니다. 다른 위치를 원하면 전체
+                파일 경로를 수정해 주세요.
               </p>
             </div>
             <label>

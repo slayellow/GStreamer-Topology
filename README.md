@@ -91,9 +91,16 @@ Windows release note:
 - Windows 실행 파일은 Tauri build script가 삽입하는 Common Controls v6 manifest에
   의존합니다. 이 manifest가 없으면 Windows 11에서도 `TaskDialogIndirect` entry
   point 오류로 앱이 첫 화면 전에 종료될 수 있습니다.
+- Release 빌드는 Windows GUI subsystem으로 생성되어야 합니다. Console subsystem으로
+  생성되면 앱 실행 시 명령프롬프트 창이 함께 뜨고, 그 창을 닫으면 앱도 종료됩니다.
+  `Desktop Release` workflow는 빌드된 `.exe`의 PE subsystem 값이 GUI/Windows인지
+  확인합니다.
 - `Desktop Release` workflow는 Windows bundle 안에 `comctl32.dll`이 포함되어
   시스템 Common Controls v6를 가리지 않는지 확인하고, 가능하면 embedded manifest에
   Common Controls v6 dependency가 있는지도 확인합니다.
+- 명령프롬프트 창이 없는 Release build에서는 stdout/stderr가 콘솔에 표시되지 않을
+  수 있습니다. 문제 재현 시 화면 캡처, 사용한 설치 파일명, 실행 경로를 GitHub
+  Issue에 첨부합니다. 현재 앱은 별도 log file을 자동 생성하지 않습니다.
 
 GStreamer discovery note:
 - macOS에서 `.dmg`로 설치한 앱을 Finder에서 실행하면 interactive shell `PATH`를
