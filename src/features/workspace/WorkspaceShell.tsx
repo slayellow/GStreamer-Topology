@@ -78,6 +78,7 @@ function WorkspaceShell({
     document.graph.nodes[0]?.id ?? null,
   )
   const [selectionRevision, setSelectionRevision] = useState(0)
+  const [canvasFocusRevision, setCanvasFocusRevision] = useState(0)
   const [activePanel, setActivePanel] = useState<WorkspacePanel | null>(null)
   const [bottomPanelHeight, setBottomPanelHeight] = useState(320)
   const [sourceFocus, setSourceFocus] = useState<SourceFocus | null>(null)
@@ -177,6 +178,7 @@ function WorkspaceShell({
     setSourceFocus(null)
     setSelectedNodeId(nodeId)
     setSelectionRevision((current) => current + 1)
+    setCanvasFocusRevision((current) => current + 1)
   }
 
   function handleShowDiagnosticSource(diagnostic: PipelineDiagnostic) {
@@ -279,6 +281,7 @@ function WorkspaceShell({
           <section className="workspace-main">
             <GraphCanvas
               document={document}
+              focusRequestRevision={canvasFocusRevision}
               selectedNodeId={selectedNodeId}
               onSelectNode={handleSelectNode}
             />

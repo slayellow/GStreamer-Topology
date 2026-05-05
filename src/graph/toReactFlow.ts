@@ -58,11 +58,11 @@ function matchesSearch(node: PipelineNodeViewModel, searchValue: string) {
 }
 
 function sourceHandleId(edge: PipelineEdgeViewModel) {
-  return edge.sourcePort?.id ?? `${edge.id}:src`
+  return `${edge.id}:source:${edge.sourcePort?.id ?? 'src'}`
 }
 
 function targetHandleId(edge: PipelineEdgeViewModel) {
-  return edge.targetPort?.id ?? `${edge.id}:sink`
+  return `${edge.id}:target:${edge.targetPort?.id ?? 'sink'}`
 }
 
 function portLabel(port: PipelinePortViewModel | undefined, fallback: string) {
@@ -172,6 +172,7 @@ function toReactFlowEdges({
       target: edge.targetNodeId,
       targetHandle: targetHandleId(edge),
       animated: isConnected,
+      type: 'smoothstep',
       ariaLabel: label ?? `${edge.sourceNodeId} to ${edge.targetNodeId}`,
       className: [
         'technical-edge',
@@ -210,7 +211,7 @@ function toReactFlowEdges({
         borderRadius: 18,
         offset: 28,
       },
-      zIndex: isConnected ? 8 : 1,
+      zIndex: isConnected ? 1 : 0,
     }
   })
 }

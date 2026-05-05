@@ -50,7 +50,6 @@ function renderPort(port: TechnicalNodePort, index: number, total: number, isSel
         position={position}
         type={type}
       />
-      <span className="technical-node__port-label">{port.label}</span>
     </span>
   )
 }

@@ -26,6 +26,7 @@ import type { PipelineDocumentViewModel } from './types.ts'
 
 type GraphCanvasProps = {
   document: PipelineDocumentViewModel
+  focusRequestRevision?: number
   selectedNodeId: string | null
   onSelectNode: (nodeId: string | null) => void
 }
@@ -59,6 +60,7 @@ const nodeTypes = {
 }
 
 const EXPORT_PADDING = 180
+const MAX_EXPORT_ASPECT_RATIO = 6
 const MAX_EXPORT_DIMENSION = 14000
 const MAX_EXPORT_PIXELS = 42_000_000
 
@@ -267,6 +269,37 @@ function exportScale(width: number, height: number) {
   return Math.min(1, dimensionScale, areaScale)
 }
 
+function frameExportBounds(width: number, height: number) {
+  const aspectRatio = width / Math.max(height, 1)
+
+  if (aspectRatio > MAX_EXPORT_ASPECT_RATIO) {
+    const framedHeight = width / MAX_EXPORT_ASPECT_RATIO
+    return {
+      extraX: 0,
+      extraY: (framedHeight - height) / 2,
+      height: framedHeight,
+      width,
+    }
+  }
+
+  if (aspectRatio < 1 / MAX_EXPORT_ASPECT_RATIO) {
+    const framedWidth = height / MAX_EXPORT_ASPECT_RATIO
+    return {
+      extraX: (framedWidth - width) / 2,
+      extraY: 0,
+      height,
+      width: framedWidth,
+    }
+  }
+
+  return {
+    extraX: 0,
+    extraY: 0,
+    height,
+    width,
+  }
+}
+
 async function captureFullTopologyImage({
   format,
   edges,
@@ -279,78 +312,46 @@ async function captureFullTopologyImage({
   stage: HTMLDivElement
 }) {
   const viewport = stage.querySelector<HTMLElement>('.react-flow__viewport')
-  const flowRoot = stage.querySelector<HTMLElement>('.react-flow')
   const bounds = getGraphBounds(nodes, edges)
 
-  if (!viewport || !flowRoot || !bounds) {
+  if (!viewport || !bounds) {
     throw new Error('full topology export target is not ready')
   }
 
   const rawWidth = bounds.width + EXPORT_PADDING * 2
   const rawHeight = bounds.height + EXPORT_PADDING * 2
-  const scale = exportScale(rawWidth, rawHeight)
-  const exportWidth = Math.ceil(rawWidth * scale)
-  const exportHeight = Math.ceil(rawHeight * scale)
-  const translateX = (EXPORT_PADDING - bounds.minX) * scale
-  const translateY = (EXPORT_PADDING - bounds.minY) * scale
+  const framedBounds = frameExportBounds(rawWidth, rawHeight)
+  const scale = exportScale(framedBounds.width, framedBounds.height)
+  const exportWidth = Math.ceil(framedBounds.width * scale)
+  const exportHeight = Math.ceil(framedBounds.height * scale)
+  const translateX = (EXPORT_PADDING + framedBounds.extraX - bounds.minX) * scale
+  const translateY = (EXPORT_PADDING + framedBounds.extraY - bounds.minY) * scale
 
-  const previousStageStyle = {
-    height: stage.style.height,
-    overflow: stage.style.overflow,
-    width: stage.style.width,
+  await nextAnimationFrame()
+
+  const options = {
+    backgroundColor: '#eff6fd',
+    cacheBust: true,
+    filter: shouldExportNode,
+    height: exportHeight,
+    pixelRatio: 1,
+    style: {
+      height: `${exportHeight}px`,
+      transform: `translate(${translateX}px, ${translateY}px) scale(${scale})`,
+      transformOrigin: '0 0',
+      width: `${exportWidth}px`,
+    },
+    width: exportWidth,
   }
-  const previousFlowStyle = {
-    height: flowRoot.style.height,
-    width: flowRoot.style.width,
-  }
-  const previousViewportStyle = {
-    transform: viewport.style.transform,
-    transformOrigin: viewport.style.transformOrigin,
-  }
 
-  try {
-    stage.classList.add('is-exporting-full')
-    stage.style.width = `${exportWidth}px`
-    stage.style.height = `${exportHeight}px`
-    stage.style.overflow = 'visible'
-    flowRoot.style.width = `${exportWidth}px`
-    flowRoot.style.height = `${exportHeight}px`
-    viewport.style.transform = `translate(${translateX}px, ${translateY}px) scale(${scale})`
-    viewport.style.transformOrigin = '0 0'
-
-    await nextAnimationFrame()
-
-    const options = {
-      backgroundColor: '#eff6fd',
-      cacheBust: true,
-      filter: shouldExportNode,
-      height: exportHeight,
-      pixelRatio: 1,
-      style: {
-        height: `${exportHeight}px`,
-        overflow: 'visible',
-        width: `${exportWidth}px`,
-      },
-      width: exportWidth,
-    }
-
-    return format === 'png'
-      ? toPng(stage, options)
-      : toJpeg(stage, { ...options, quality: 0.94 })
-  } finally {
-    stage.classList.remove('is-exporting-full')
-    stage.style.width = previousStageStyle.width
-    stage.style.height = previousStageStyle.height
-    stage.style.overflow = previousStageStyle.overflow
-    flowRoot.style.width = previousFlowStyle.width
-    flowRoot.style.height = previousFlowStyle.height
-    viewport.style.transform = previousViewportStyle.transform
-    viewport.style.transformOrigin = previousViewportStyle.transformOrigin
-  }
+  return format === 'png'
+    ? toPng(viewport, options)
+    : toJpeg(viewport, { ...options, quality: 0.94 })
 }
 
 function GraphCanvas({
   document,
+  focusRequestRevision = 0,
   selectedNodeId,
   onSelectNode,
 }: GraphCanvasProps) {
@@ -424,7 +425,37 @@ function GraphCanvas({
       padding: 0.18,
     })
   }
-  const handleFocusSelected = () => {
+  const focusSelectedNode = (duration = 260) => {
+    if (!flow || !selectedNodeId) {
+      return
+    }
+
+    const node = nodes.find((candidate) => candidate.id === selectedNodeId)
+    if (!node) {
+      return
+    }
+
+    const width =
+      typeof node.style?.width === 'number' ? node.style.width : node.width ?? 220
+    const height =
+      typeof node.style?.height === 'number' ? node.style.height : node.height ?? 118
+    const currentZoom = flow.getZoom()
+    const nextZoom = Math.min(Math.max(currentZoom, 0.58), 1.02)
+
+    flow.setCenter(
+      node.position.x + width / 2,
+      node.position.y + height / 2,
+      {
+        duration,
+        zoom: nextZoom,
+      },
+    )
+  }
+  useEffect(() => {
+    if (!focusRequestRevision) {
+      return
+    }
+
     if (!flow || !selectedNodeId) {
       return
     }
@@ -449,6 +480,10 @@ function GraphCanvas({
         zoom: nextZoom,
       },
     )
+  }, [flow, focusRequestRevision, nodes, selectedNodeId])
+
+  const handleFocusSelected = () => {
+    focusSelectedNode(260)
   }
   const handleExport = async (format: ExportFormat, explicitPath?: string) => {
     const stage = stageRef.current

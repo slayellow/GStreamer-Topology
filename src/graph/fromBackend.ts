@@ -316,7 +316,12 @@ async function layoutNodes(
       'elk.algorithm': 'layered',
       'elk.direction': 'RIGHT',
       'elk.edgeRouting': 'ORTHOGONAL',
+      'elk.spacing.edgeEdge': '18',
+      'elk.spacing.edgeNode': '42',
       'elk.spacing.nodeNode': '36',
+      'elk.layered.crossingMinimization.strategy': 'LAYER_SWEEP',
+      'elk.layered.nodePlacement.strategy': 'NETWORK_SIMPLEX',
+      'elk.layered.spacing.edgeNodeBetweenLayers': '42',
       'elk.layered.spacing.nodeNodeBetweenLayers': String(layerSpacing),
     },
     children: nodes.map((node) => ({
