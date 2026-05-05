@@ -80,6 +80,14 @@
   filter: drop-shadow(0 8px 14px rgba(21, 141, 255, 0.18));
 }
 
+.technical-edge.is-connected .react-flow__edge-textbg {
+  filter: drop-shadow(0 8px 14px rgba(21, 141, 255, 0.16));
+}
+
+.technical-edge.is-muted {
+  pointer-events: none;
+}
+
 .graph-badge {
   padding: 9px 12px;
   border-radius: 999px;
@@ -334,30 +342,112 @@
 .technical-node__handle {
   width: 10px;
   height: 10px;
-  background: rgba(22, 37, 58, 0.35);
+  background: rgba(22, 37, 58, 0.38);
   border: 2px solid rgba(255, 255, 255, 0.84);
+  transition:
+    background 140ms ease,
+    border-color 140ms ease,
+    box-shadow 140ms ease,
+    transform 140ms ease;
 }
 
-.technical-node__port-dot {
+.technical-node__port-rail {
   position: absolute;
-  top: 50%;
-  z-index: 2;
-  width: 16px;
-  height: 16px;
-  border: 3px solid rgba(247, 251, 255, 0.92);
-  border-radius: 999px;
-  background: rgba(22, 37, 58, 0.35);
-  box-shadow: 0 6px 12px rgba(15, 34, 58, 0.14);
+  top: 0;
+  bottom: 0;
+  z-index: 3;
+  width: 22px;
   pointer-events: none;
-  transform: translate(-50%, -50%);
 }
 
-.technical-node__port-dot--sink {
+.technical-node__port-rail--sink {
+  left: -12px;
+}
+
+.technical-node__port-rail--source {
+  right: -12px;
+}
+
+.technical-node__port {
+  position: absolute;
+  width: 18px;
+  height: 18px;
+  border: 3px solid rgba(247, 251, 255, 0.94);
+  border-radius: 999px;
+  background: rgba(22, 37, 58, 0.36);
+  box-shadow: 0 6px 12px rgba(15, 34, 58, 0.14);
+  opacity: 0.72;
+  pointer-events: none;
+  transform: translateY(-50%);
+  transition:
+    background 140ms ease,
+    box-shadow 140ms ease,
+    opacity 140ms ease,
+    transform 140ms ease;
+}
+
+.technical-node__port--sink {
   left: 0;
 }
 
-.technical-node__port-dot--src {
-  left: 100%;
+.technical-node__port--source {
+  right: 0;
+}
+
+.technical-node__port .technical-node__handle {
+  inset: 50% auto auto 50%;
+  opacity: 0;
+  pointer-events: auto;
+  transform: translate(-50%, -50%);
+}
+
+.technical-node__port.is-connected,
+.technical-node__port.is-node-selected {
+  opacity: 1;
+}
+
+.technical-node__port.is-connected {
+  background: var(--edge-active);
+  box-shadow:
+    0 0 0 5px rgba(21, 141, 255, 0.16),
+    0 10px 18px rgba(21, 141, 255, 0.24);
+  transform: translateY(-50%) scale(1.08);
+}
+
+.technical-node__port-label {
+  position: absolute;
+  top: 50%;
+  max-width: 104px;
+  overflow: hidden;
+  padding: 4px 7px;
+  border: 1px solid rgba(21, 141, 255, 0.16);
+  border-radius: 999px;
+  background: rgba(247, 251, 255, 0.94);
+  box-shadow: 0 8px 18px rgba(15, 34, 58, 0.12);
+  color: var(--accent-primary);
+  font-size: 0.66rem;
+  font-weight: 900;
+  line-height: 1;
+  opacity: 0;
+  text-overflow: ellipsis;
+  transform: translateY(-50%) scale(0.96);
+  transition:
+    opacity 140ms ease,
+    transform 140ms ease;
+  white-space: nowrap;
+}
+
+.technical-node__port--sink .technical-node__port-label {
+  right: calc(100% + 6px);
+}
+
+.technical-node__port--source .technical-node__port-label {
+  left: calc(100% + 6px);
+}
+
+.technical-node.is-selected .technical-node__port.is-connected .technical-node__port-label {
+  opacity: 1;
+  transform: translateY(-50%) scale(1);
 }
 
 .technical-node.is-selected {

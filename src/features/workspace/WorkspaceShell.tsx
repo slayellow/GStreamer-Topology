@@ -173,6 +173,12 @@ function WorkspaceShell({
     setSelectionRevision((current) => current + 1)
   }
 
+  function handleSelectSourceNode(nodeId: string) {
+    setSourceFocus(null)
+    setSelectedNodeId(nodeId)
+    setSelectionRevision((current) => current + 1)
+  }
+
   function handleShowDiagnosticSource(diagnostic: PipelineDiagnostic) {
     if (!diagnostic.sourceSpan?.start && diagnostic.sourceSpan?.start !== 0) {
       return
@@ -328,6 +334,7 @@ function WorkspaceShell({
                   isOpen
                   selectedNode={selectedNode}
                   selectionRevision={selectionRevision}
+                  onSelectNodeSource={handleSelectSourceNode}
                   onToggle={() => setActivePanel(null)}
                 />
               ) : null}

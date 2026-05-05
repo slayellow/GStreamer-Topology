@@ -21,24 +21,33 @@ GitHub Project note:
 Sprint board items:
 - `#25` `스프린트 07: 토폴로지 Export PNG/JPG 전체 저장 기능`
 - `#33` `스프린트 07: Windows 11 실행 시 명령프롬프트 창 제거`
+- `#34` `스프린트 07: Canvas Edge 라우팅과 Multi-port 표시 개선`
+- `#35` `스프린트 07: Pipeline 원문 클릭 시 Canvas Element 선택`
+- `#36` `스프린트 07 Optional: Update 알림 버튼 도입 검토`
 
 Setup completed:
-- `#25` and `#33` are on the parent board.
-- `#25` and `#33` are on the `Sprint 07` Project.
-- `#25` and `#33` have the `sprint-07` label.
-- Sprint-specific planning comments were added to both issues in Korean.
-- Both issues are currently in `Todo`.
+- `#25`, `#33`, `#34`, `#35`, and `#36` are on the parent board.
+- `#25`, `#33`, `#34`, `#35`, and `#36` are on the `Sprint 07` Project.
+- `#25`, `#33`, `#34`, `#35`, and `#36` have the `sprint-07` label.
+- Sprint-specific planning comments were added to the active issues in Korean.
+- `#34` and `#35` are active implementation items.
+- `#36` is an Optional design/technical review item, not a fake Update button
+  implementation.
 
 ## Expected Sprint Theme
 
 Sprint 07 should focus on post-release feedback and one carry-over usability
 gap from Sprint 06.
 
-The sprint should answer two practical questions:
+The sprint should answer these practical questions:
 - Can exported topology images include the full graph, not only the visible
   viewport?
 - Can the Windows installer launch like a normal GUI desktop app without a
   console window?
+- Can large canvas Edge routing remain readable when one Element has multiple
+  SRC/SINK connections?
+- Can users click Pipeline source text to select the corresponding Canvas
+  Element?
 
 ## Issue Triage
 
@@ -77,14 +86,65 @@ Sprint 07 outcome:
 - A fallback way to collect diagnostics is documented because the console will
   no longer be visible.
 
+### `#34` Canvas Edge routing and multi-port display
+
+Priority:
+- `P1`
+
+User evidence:
+- Edge lines can visually pass over Element cards.
+- Multiple SRC/SINK connections can collapse into one central point, making
+  tee/funnel/request-pad style graphs harder to read.
+
+Sprint 07 outcome:
+- Edge endpoints are distributed across left/right node rails instead of a
+  single center handle.
+- Selected nodes emphasize connected Edges and connected port endpoints.
+- Element labels and factory names remain readable.
+- This improves readability but does not claim full edge crossing
+  minimization.
+
+### `#35` Pipeline source click selects Canvas Element
+
+Priority:
+- `P1`
+
+User evidence:
+- Canvas-to-source highlighting exists, but source-to-canvas selection is
+  missing.
+
+Sprint 07 outcome:
+- Source panel renders valid Element source spans as clickable text ranges.
+- Clicking or keyboard-selecting a source range updates Canvas selection,
+  Inspector, and connected Edge highlight.
+- Source formatting and diagnostic focus behavior remain intact.
+
+### `#36` Optional Update notice button review
+
+Priority:
+- `P2`, Optional
+
+Sprint 07 outcome:
+- Keep this as a design/technical spike until updater manifest, signing, and
+  release QA policy are defined.
+- Do not add a fake `Update` button that cannot safely update the app.
+
 ## Recommended Implementation Order
 
-1. `#33` Windows console window removal.
+1. `#34` Canvas Edge routing and multi-port display.
+   - This directly addresses the latest canvas readability feedback and can be
+     verified with existing fixtures.
+2. `#35` Pipeline source click selects Canvas Element.
+   - This completes the bidirectional source/canvas selection workflow.
+3. `#33` Windows console window removal.
    - This is likely a small packaging/build setting change and should reduce
      friction before the next Windows team QA pass.
-2. `#25` full topology export.
+4. `#25` full topology export.
    - This is the larger functional slice and should be fixture-driven with
      `01`, `26`, and `27` pipeline files.
+5. `#36` Optional Update notice button review.
+   - Treat as a technical spike unless the release/signing requirements become
+     concrete.
 
 ## Expert Loop Plan
 
