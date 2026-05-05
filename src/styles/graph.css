@@ -92,6 +92,15 @@
   filter: drop-shadow(0 8px 14px rgba(21, 141, 255, 0.16));
 }
 
+.graph-stage.is-exporting-full .technical-node,
+.graph-stage.is-exporting-full .technical-node.is-selected,
+.graph-stage.is-exporting-full .technical-node__port,
+.graph-stage.is-exporting-full .react-flow__edge-path,
+.graph-stage.is-exporting-full .react-flow__edge-textbg {
+  box-shadow: none !important;
+  filter: none !important;
+}
+
 .technical-edge.is-muted {
   pointer-events: none;
 }

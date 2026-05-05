@@ -344,9 +344,16 @@ async function captureFullTopologyImage({
     width: exportWidth,
   }
 
-  return format === 'png'
-    ? toPng(viewport, options)
-    : toJpeg(viewport, { ...options, quality: 0.94 })
+  try {
+    stage.classList.add('is-exporting-full')
+    await nextAnimationFrame()
+
+    return format === 'png'
+      ? toPng(viewport, options)
+      : toJpeg(viewport, { ...options, quality: 0.94 })
+  } finally {
+    stage.classList.remove('is-exporting-full')
+  }
 }
 
 function GraphCanvas({
