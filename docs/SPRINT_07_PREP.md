@@ -23,16 +23,15 @@ Sprint board items:
 - `#33` `스프린트 07: Windows 11 실행 시 명령프롬프트 창 제거`
 - `#34` `스프린트 07: Canvas Edge 라우팅과 Multi-port 표시 개선`
 - `#35` `스프린트 07: Pipeline 원문 클릭 시 Canvas Element 선택`
-- `#36` `스프린트 07 Optional: Update 알림 버튼 도입 검토`
 
 Setup completed:
-- `#25`, `#33`, `#34`, `#35`, and `#36` are on the parent board.
-- `#25`, `#33`, `#34`, `#35`, and `#36` are on the `Sprint 07` Project.
-- `#25`, `#33`, `#34`, `#35`, and `#36` have the `sprint-07` label.
+- `#25`, `#33`, `#34`, and `#35` are on the parent board.
+- `#25`, `#33`, `#34`, and `#35` are on the `Sprint 07` Project.
+- `#25`, `#33`, `#34`, and `#35` have the `sprint-07` label.
 - Sprint-specific planning comments were added to the active issues in Korean.
 - `#25`, `#33`, `#34`, and `#35` are active implementation items.
-- `#36` is an Optional design/technical review item, not a fake Update button
-  implementation.
+- `#36` was closed as not planned and removed from the Sprint 07 boards because
+  Update notification/update installation is not needed for the current QA goal.
 
 ## Expected Sprint Theme
 
@@ -123,16 +122,6 @@ Sprint 07 outcome:
   Inspector, and connected Edge highlight.
 - Source formatting and diagnostic focus behavior remain intact.
 
-### `#36` Optional Update notice button review
-
-Priority:
-- `P2`, Optional
-
-Sprint 07 outcome:
-- Keep this as a design/technical spike until updater manifest, signing, and
-  release QA policy are defined.
-- Do not add a fake `Update` button that cannot safely update the app.
-
 ## Recommended Implementation Order
 
 1. `#34` Canvas Edge routing and multi-port display.
@@ -146,9 +135,6 @@ Sprint 07 outcome:
 4. `#25` full topology export.
    - This is the larger functional slice and should be fixture-driven with
      `01`, `26`, and `27` pipeline files.
-5. `#36` Optional Update notice button review.
-   - Treat as a technical spike unless the release/signing requirements become
-     concrete.
 
 ## Expert Loop Plan
 
