@@ -3,15 +3,17 @@ use std::fs;
 use std::io::Read;
 use std::net::TcpStream;
 use std::path::{Path, PathBuf};
-use std::process::{Command, Output};
+use std::process::{Command, Output, Stdio};
+use std::thread;
+use std::time::{Duration, Instant};
 
 use base64::{engine::general_purpose, Engine as _};
 use ssh2::Session;
 
 use crate::models::{
     ElementMetadataResponse, ElementPadTemplateMetadata, ElementPropertyMetadata,
-    GStreamerProbeResponse, MetadataAuthority, PipelineDocument, RemoteProbeResponse,
-    RemoteTargetRequest, SourceKind,
+    GStreamerProbeResponse, MetadataAuthority, PipelineDocument, PipelineSimulationResponse,
+    RemoteProbeResponse, RemoteTargetRequest, SourceKind,
 };
 use crate::parser::{normalize_text, parse_document};
 
@@ -212,6 +214,14 @@ fn gst_inspect_executable_name() -> &'static str {
     }
 }
 
+fn gst_launch_executable_name() -> &'static str {
+    if cfg!(target_os = "windows") {
+        "gst-launch-1.0.exe"
+    } else {
+        "gst-launch-1.0"
+    }
+}
+
 fn push_unique_candidate(candidates: &mut Vec<PathBuf>, path: PathBuf) {
     if !candidates.iter().any(|candidate| candidate == &path) {
         candidates.push(path);
@@ -219,7 +229,14 @@ fn push_unique_candidate(candidates: &mut Vec<PathBuf>, path: PathBuf) {
 }
 
 fn gst_inspect_command_candidates() -> Vec<PathBuf> {
-    let executable_name = gst_inspect_executable_name();
+    gstreamer_command_candidates(gst_inspect_executable_name())
+}
+
+fn gst_launch_command_candidates() -> Vec<PathBuf> {
+    gstreamer_command_candidates(gst_launch_executable_name())
+}
+
+fn gstreamer_command_candidates(executable_name: &str) -> Vec<PathBuf> {
     let mut candidates = Vec::new();
     push_unique_candidate(&mut candidates, PathBuf::from(executable_name));
 
@@ -300,6 +317,31 @@ fn resolve_gst_inspect_command() -> Result<PathBuf, String> {
     ))
 }
 
+fn resolve_gst_launch_command() -> Result<PathBuf, String> {
+    let candidates = gst_launch_command_candidates();
+    let mut diagnostics = Vec::new();
+
+    for candidate in &candidates {
+        match Command::new(candidate).arg("--version").output() {
+            Ok(output) if output.status.success() => return Ok(candidate.clone()),
+            Ok(output) => {
+                let stderr = String::from_utf8_lossy(&output.stderr)
+                    .trim()
+                    .to_string()
+                    .if_empty("version command failed.");
+                diagnostics.push(format!("{}: {stderr}", candidate.display()));
+            }
+            Err(error) => diagnostics.push(format!("{}: {error}", candidate.display())),
+        }
+    }
+
+    Err(format!(
+        "gst-launch-1.0 is not available. Checked {} candidate path(s): {}",
+        candidates.len(),
+        diagnostics.join("; ")
+    ))
+}
+
 fn run_gst_inspect(args: &[&str]) -> Result<(PathBuf, Output), String> {
     let command_path = resolve_gst_inspect_command()?;
     let output = Command::new(&command_path)
@@ -314,6 +356,198 @@ fn run_gst_inspect(args: &[&str]) -> Result<(PathBuf, Output), String> {
         })?;
 
     Ok((command_path, output))
+}
+
+fn split_pipeline_arguments(pipeline: &str) -> Result<Vec<String>, String> {
+    let mut args = Vec::new();
+    let mut current = String::new();
+    let mut chars = pipeline.chars().peekable();
+    let mut quote: Option<char> = None;
+    let mut escaped = false;
+
+    while let Some(character) = chars.next() {
+        if escaped {
+            current.push(character);
+            escaped = false;
+            continue;
+        }
+
+        if character == '\\' {
+            escaped = true;
+            continue;
+        }
+
+        if let Some(active_quote) = quote {
+            if character == active_quote {
+                quote = None;
+            } else {
+                current.push(character);
+            }
+            continue;
+        }
+
+        match character {
+            '\'' | '"' => quote = Some(character),
+            character if character.is_whitespace() => {
+                if !current.is_empty() {
+                    args.push(std::mem::take(&mut current));
+                }
+            }
+            _ => current.push(character),
+        }
+
+        if chars.peek().is_none() && escaped {
+            current.push('\\');
+            escaped = false;
+        }
+    }
+
+    if escaped {
+        current.push('\\');
+    }
+
+    if quote.is_some() {
+        return Err("Pipeline contains an unterminated quote.".to_string());
+    }
+
+    if !current.is_empty() {
+        args.push(current);
+    }
+
+    if args.is_empty() {
+        Err("Pipeline text is empty.".to_string())
+    } else {
+        Ok(args)
+    }
+}
+
+fn gst_launch_args(raw_text: &str) -> Result<Vec<String>, String> {
+    let mut args = vec![
+        "--gst-disable-registry-fork".to_string(),
+        "-q".to_string(),
+    ];
+    args.extend(split_pipeline_arguments(raw_text)?);
+    Ok(args)
+}
+
+fn output_with_timeout(
+    command_path: &Path,
+    args: &[String],
+    timeout: Duration,
+) -> Result<(Output, bool), String> {
+    let mut child = Command::new(command_path)
+        .args(args)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .map_err(|error| {
+            format!(
+                "failed to run `{}` with args `{}`: {error}",
+                command_path.display(),
+                args.join(" ")
+            )
+        })?;
+    let started = Instant::now();
+
+    loop {
+        match child.try_wait() {
+            Ok(Some(_)) => {
+                return child
+                    .wait_with_output()
+                    .map(|output| (output, false))
+                    .map_err(|error| format!("failed to read gst-launch output: {error}"));
+            }
+            Ok(None) if started.elapsed() >= timeout => {
+                let _ = child.kill();
+                return child
+                    .wait_with_output()
+                    .map(|output| (output, true))
+                    .map_err(|error| {
+                        format!("failed to stop gst-launch after timeout: {error}")
+                    });
+            }
+            Ok(None) => thread::sleep(Duration::from_millis(50)),
+            Err(error) => {
+                let _ = child.kill();
+                return Err(format!("failed to poll gst-launch process: {error}"));
+            }
+        }
+    }
+}
+
+#[tauri::command]
+pub fn simulate_local_pipeline(raw_text: String) -> PipelineSimulationResponse {
+    let command_path = match resolve_gst_launch_command() {
+        Ok(command_path) => command_path,
+        Err(error) => {
+            return PipelineSimulationResponse {
+                available: false,
+                authority: MetadataAuthority::Local,
+                success: false,
+                timed_out: false,
+                exit_status: None,
+                stdout: String::new(),
+                stderr: String::new(),
+                diagnostic: Some(error),
+                command: gst_launch_executable_name().to_string(),
+            };
+        }
+    };
+    let args = match gst_launch_args(&raw_text) {
+        Ok(args) => args,
+        Err(error) => {
+            return PipelineSimulationResponse {
+                available: true,
+                authority: MetadataAuthority::Local,
+                success: false,
+                timed_out: false,
+                exit_status: None,
+                stdout: String::new(),
+                stderr: String::new(),
+                diagnostic: Some(error),
+                command: command_path.display().to_string(),
+            };
+        }
+    };
+    let command = format!("{} {}", command_path.display(), args.join(" "));
+
+    match output_with_timeout(&command_path, &args, Duration::from_secs(5)) {
+        Ok((output, timed_out)) => {
+            let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+            let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
+            let success = output.status.success() || timed_out;
+            let diagnostic = if timed_out {
+                Some("Simulation stopped after 5 seconds without an immediate GStreamer error.".to_string())
+            } else if success {
+                None
+            } else {
+                Some(stderr.clone().if_empty("gst-launch-1.0 reported a failure."))
+            };
+
+            PipelineSimulationResponse {
+                available: true,
+                authority: MetadataAuthority::Local,
+                success,
+                timed_out,
+                exit_status: output.status.code(),
+                stdout,
+                stderr,
+                diagnostic,
+                command,
+            }
+        }
+        Err(error) => PipelineSimulationResponse {
+            available: true,
+            authority: MetadataAuthority::Local,
+            success: false,
+            timed_out: false,
+            exit_status: None,
+            stdout: String::new(),
+            stderr: String::new(),
+            diagnostic: Some(error),
+            command,
+        },
+    }
 }
 
 #[tauri::command]
@@ -430,6 +664,62 @@ pub fn inspect_remote_element(
 }
 
 #[tauri::command]
+pub fn simulate_remote_pipeline(
+    request: RemoteTargetRequest,
+    raw_text: String,
+) -> Result<PipelineSimulationResponse, String> {
+    let args = match gst_launch_args(&raw_text) {
+        Ok(args) => args,
+        Err(error) => {
+            return Ok(PipelineSimulationResponse {
+                available: true,
+                authority: MetadataAuthority::Remote,
+                success: false,
+                timed_out: false,
+                exit_status: None,
+                stdout: String::new(),
+                stderr: String::new(),
+                diagnostic: Some(error),
+                command: "gst-launch-1.0".to_string(),
+            });
+        }
+    };
+    let mut session = connect_remote(&request)?;
+    let command = format!(
+        "command -v gst-launch-1.0 >/dev/null 2>&1 || {{ echo 'gst-launch-1.0 is not available on remote target.' >&2; exit 127; }}; timeout 5s gst-launch-1.0 {}",
+        args.iter()
+            .map(|arg| shell_escape(arg))
+            .collect::<Vec<_>>()
+            .join(" "),
+    );
+    let output = exec_remote_command_output(&mut session, &command)?;
+    let timed_out = output.exit_status == 124;
+    let available = output.exit_status != 127;
+    let success = available && (output.exit_status == 0 || timed_out);
+    let diagnostic = if !available {
+        Some(output.stderr.clone().if_empty("gst-launch-1.0 is not available on remote target."))
+    } else if timed_out {
+        Some("Remote simulation stopped after 5 seconds without an immediate GStreamer error.".to_string())
+    } else if success {
+        None
+    } else {
+        Some(output.stderr.clone().if_empty("remote gst-launch-1.0 reported a failure."))
+    };
+
+    Ok(PipelineSimulationResponse {
+        available,
+        authority: MetadataAuthority::Remote,
+        success,
+        timed_out,
+        exit_status: Some(output.exit_status),
+        stdout: output.stdout,
+        stderr: output.stderr,
+        diagnostic,
+        command,
+    })
+}
+
+#[tauri::command]
 pub fn load_remote_pipeline(
     request: RemoteTargetRequest,
     path: String,
@@ -483,6 +773,29 @@ fn connect_remote(request: &RemoteTargetRequest) -> Result<Session, String> {
 }
 
 fn exec_remote_command(session: &mut Session, command: &str) -> Result<String, String> {
+    let output = exec_remote_command_output(session, command)?;
+
+    if output.exit_status != 0 {
+        return Err(format!(
+            "remote command `{command}` failed with status {}: {}",
+            output.exit_status,
+            output.stderr.trim()
+        ));
+    }
+
+    Ok(output.stdout)
+}
+
+struct RemoteCommandOutput {
+    exit_status: i32,
+    stdout: String,
+    stderr: String,
+}
+
+fn exec_remote_command_output(
+    session: &mut Session,
+    command: &str,
+) -> Result<RemoteCommandOutput, String> {
     let mut channel = session
         .channel_session()
         .map_err(|error| format!("failed to open SSH channel: {error}"))?;
@@ -505,14 +818,11 @@ fn exec_remote_command(session: &mut Session, command: &str) -> Result<String, S
         .exit_status()
         .map_err(|error| format!("failed to inspect remote command exit status: {error}"))?;
 
-    if exit_status != 0 {
-        return Err(format!(
-            "remote command `{command}` failed with status {exit_status}: {}",
-            stderr.trim()
-        ));
-    }
-
-    Ok(stdout)
+    Ok(RemoteCommandOutput {
+        exit_status,
+        stdout,
+        stderr,
+    })
 }
 
 fn shell_escape(value: &str) -> String {
@@ -885,6 +1195,35 @@ mod tests {
             .contains("-1"));
 
         let _ = fs::remove_file(first_path);
+    }
+
+    #[test]
+    fn split_pipeline_arguments_keeps_quoted_values() {
+        let args = split_pipeline_arguments(
+            "videotestsrc pattern=smpte ! textoverlay text=\"hello world\" ! fakesink",
+        )
+        .expect("quoted pipeline should split");
+
+        assert_eq!(
+            args,
+            vec![
+                "videotestsrc",
+                "pattern=smpte",
+                "!",
+                "textoverlay",
+                "text=hello world",
+                "!",
+                "fakesink",
+            ]
+        );
+    }
+
+    #[test]
+    fn split_pipeline_arguments_rejects_unterminated_quote() {
+        let error = split_pipeline_arguments("videotestsrc text=\"missing")
+            .expect_err("unterminated quote should fail");
+
+        assert!(error.contains("unterminated quote"));
     }
 
     #[test]

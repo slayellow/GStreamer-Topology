@@ -1,3 +1,4 @@
+import { memo } from 'react'
 import { Handle, Position, type NodeProps } from '@xyflow/react'
 import type { TechnicalFlowNode, TechnicalNodePort } from '../toReactFlow.ts'
 
@@ -97,4 +98,32 @@ function TechnicalNode({ data }: NodeProps<TechnicalFlowNode>) {
   )
 }
 
-export { TechnicalNode }
+function portsEqual(first: TechnicalNodePort[], second: TechnicalNodePort[]) {
+  if (first.length !== second.length) {
+    return false
+  }
+
+  return first.every((port, index) => {
+    const other = second[index]
+    return (
+      port.id === other.id
+      && port.isConnectedToSelection === other.isConnectedToSelection
+      && port.label === other.label
+      && port.side === other.side
+    )
+  })
+}
+
+const MemoizedTechnicalNode = memo(TechnicalNode, (previous, next) => (
+  previous.data.factoryName === next.data.factoryName
+  && previous.data.kind === next.data.kind
+  && previous.data.isSearchMatch === next.data.isSearchMatch
+  && previous.data.isSelected === next.data.isSelected
+  && previous.data.label === next.data.label
+  && previous.data.tone === next.data.tone
+  && previous.data.warningCount === next.data.warningCount
+  && previous.data.tags.join('|') === next.data.tags.join('|')
+  && portsEqual(previous.data.ports, next.data.ports)
+))
+
+export { MemoizedTechnicalNode as TechnicalNode }

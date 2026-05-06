@@ -9,6 +9,7 @@ import type {
 
 type ReactFlowNodeParams = {
   graph: PipelineGraphViewModel
+  portIndex?: NodePortIndex
   searchValue: string
   selectedNodeId: string | null
 }
@@ -32,11 +33,16 @@ type TechnicalNodeData = {
 
 type TechnicalFlowNode = Node<TechnicalNodeData, 'technical'>
 type TechnicalNodePort = {
+  edgeSourceNodeId: string
+  edgeTargetNodeId: string
   id: string
   isConnectedToSelection: boolean
   label: string
   side: 'source' | 'target'
 }
+
+type IndexedNodePort = Omit<TechnicalNodePort, 'isConnectedToSelection'>
+type NodePortIndex = Map<string, IndexedNodePort[]>
 
 const DEFAULT_NODE_DIMENSIONS = {
   height: 118,
@@ -79,52 +85,79 @@ function portLabel(port: PipelinePortViewModel | undefined, fallback: string) {
 }
 
 function buildNodePorts(
-  graph: PipelineGraphViewModel,
+  portIndex: NodePortIndex,
   nodeId: string,
   selectedNodeId: string | null,
 ) {
-  const ports = new Map<string, TechnicalNodePort>()
-  const connectedToSelection = (edge: PipelineEdgeViewModel) =>
-    edge.sourceNodeId === selectedNodeId || edge.targetNodeId === selectedNodeId
-  const addPort = (port: TechnicalNodePort) => {
-    const existing = ports.get(port.id)
-    ports.set(port.id, {
-      ...port,
-      isConnectedToSelection:
-        port.isConnectedToSelection || Boolean(existing?.isConnectedToSelection),
+  return (portIndex.get(nodeId) ?? []).map((port) => ({
+    ...port,
+    isConnectedToSelection: Boolean(
+      selectedNodeId
+        && (port.edgeSourceNodeId === selectedNodeId || port.edgeTargetNodeId === selectedNodeId),
+    ),
+  }))
+}
+
+function addIndexedPort(
+  portIndex: NodePortIndex,
+  nodeId: string,
+  port: IndexedNodePort,
+) {
+  const ports = portIndex.get(nodeId) ?? []
+  ports.push(port)
+  portIndex.set(nodeId, ports)
+}
+
+function createNodePortIndex(graph: PipelineGraphViewModel): NodePortIndex {
+  const nodeOrder = new Map(graph.nodes.map((node, index) => [node.id, index]))
+  const portIndex: NodePortIndex = new Map()
+
+  graph.edges.forEach((edge, index) => {
+    const sourceId = sourceHandleId(edge)
+    addIndexedPort(portIndex, edge.sourceNodeId, {
+      edgeSourceNodeId: edge.sourceNodeId,
+      edgeTargetNodeId: edge.targetNodeId,
+      id: sourceId,
+      label: portLabel(edge.sourcePort, `SRC ${index + 1}`),
+      side: 'source',
+    })
+
+    const targetId = targetHandleId(edge)
+    addIndexedPort(portIndex, edge.targetNodeId, {
+      edgeSourceNodeId: edge.sourceNodeId,
+      edgeTargetNodeId: edge.targetNodeId,
+      id: targetId,
+      label: portLabel(edge.targetPort, `SINK ${index + 1}`),
+      side: 'target',
+    })
+  })
+
+  for (const ports of portIndex.values()) {
+    ports.sort((first, second) => {
+      const firstOtherNode =
+        first.side === 'source' ? first.edgeTargetNodeId : first.edgeSourceNodeId
+      const secondOtherNode =
+        second.side === 'source' ? second.edgeTargetNodeId : second.edgeSourceNodeId
+
+      return (
+        (nodeOrder.get(firstOtherNode) ?? 0) - (nodeOrder.get(secondOtherNode) ?? 0)
+        || first.label.localeCompare(second.label)
+        || first.id.localeCompare(second.id)
+      )
     })
   }
 
-  graph.edges.forEach((edge, index) => {
-    if (edge.sourceNodeId === nodeId) {
-      const id = sourceHandleId(edge)
-      addPort({
-        id,
-        isConnectedToSelection: connectedToSelection(edge),
-        label: portLabel(edge.sourcePort, `SRC ${index + 1}`),
-        side: 'source',
-      })
-    }
-
-    if (edge.targetNodeId === nodeId) {
-      const id = targetHandleId(edge)
-      addPort({
-        id,
-        isConnectedToSelection: connectedToSelection(edge),
-        label: portLabel(edge.targetPort, `SINK ${index + 1}`),
-        side: 'target',
-      })
-    }
-  })
-
-  return Array.from(ports.values())
+  return portIndex
 }
 
 function toReactFlowNodes({
   graph,
+  portIndex,
   searchValue,
   selectedNodeId,
 }: ReactFlowNodeParams): TechnicalFlowNode[] {
+  const indexedPorts = portIndex ?? createNodePortIndex(graph)
+
   return graph.nodes.map((node) => {
     const dimensions = node.dimensions ?? DEFAULT_NODE_DIMENSIONS
 
@@ -146,7 +179,7 @@ function toReactFlowNodes({
         isSearchMatch: matchesSearch(node, searchValue),
         isSelected: node.id === selectedNodeId,
         label: node.instanceName || node.factoryName,
-        ports: buildNodePorts(graph, node.id, selectedNodeId),
+        ports: buildNodePorts(indexedPorts, node.id, selectedNodeId),
         tags: node.tags,
         tone: node.tone,
         warningCount: node.warnings.length,
@@ -171,7 +204,7 @@ function toReactFlowEdges({
       sourceHandle: sourceHandleId(edge),
       target: edge.targetNodeId,
       targetHandle: targetHandleId(edge),
-      animated: isConnected,
+      animated: false,
       type: 'smoothstep',
       ariaLabel: label ?? `${edge.sourceNodeId} to ${edge.targetNodeId}`,
       className: [
@@ -216,5 +249,5 @@ function toReactFlowEdges({
   })
 }
 
-export { toReactFlowEdges, toReactFlowNodes }
-export type { TechnicalFlowNode, TechnicalNodeData, TechnicalNodePort }
+export { createNodePortIndex, toReactFlowEdges, toReactFlowNodes }
+export type { NodePortIndex, TechnicalFlowNode, TechnicalNodeData, TechnicalNodePort }

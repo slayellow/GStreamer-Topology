@@ -21,13 +21,19 @@ import {
 } from '../app/backend.ts'
 import { IconButton } from '../components/IconButton.tsx'
 import { TechnicalNode } from './nodes/TechnicalNode.tsx'
-import { toReactFlowEdges, toReactFlowNodes, type TechnicalFlowNode } from './toReactFlow.ts'
+import {
+  createNodePortIndex,
+  toReactFlowEdges,
+  toReactFlowNodes,
+  type TechnicalFlowNode,
+} from './toReactFlow.ts'
 import type { PipelineDocumentViewModel } from './types.ts'
 
 type GraphCanvasProps = {
   document: PipelineDocumentViewModel
   focusRequestRevision?: number
   selectedNodeId: string | null
+  simulation?: GraphSimulationControl
   onSelectNode: (nodeId: string | null) => void
 }
 
@@ -44,6 +50,14 @@ type ExportDraft = {
   isLoadingPath: boolean
   message?: string
   path: string
+}
+
+type GraphSimulationControl = {
+  disabledReason?: string
+  isRunning: boolean
+  message?: string
+  onRun: () => void
+  tone?: 'error' | 'info' | 'success' | 'warning'
 }
 
 type GraphBounds = {
@@ -360,17 +374,13 @@ function GraphCanvas({
   document,
   focusRequestRevision = 0,
   selectedNodeId,
+  simulation,
   onSelectNode,
 }: GraphCanvasProps) {
   const [flow, setFlow] = useState<ReactFlowInstance<TechnicalFlowNode, Edge> | null>(null)
   const stageRef = useRef<HTMLDivElement | null>(null)
+  const handledFocusRevisionRef = useRef(0)
   const key = storageKey(document)
-  const selectedNode = document.graph.nodes.find((node) => node.id === selectedNodeId) ?? null
-  const renderedNodes = useMemo(() => toReactFlowNodes({
-    graph: document.graph,
-    searchValue: '',
-    selectedNodeId,
-  }), [document.graph, selectedNodeId])
   const [manualPositions, setManualPositions] = useState<StoredPositions>(() =>
     readStoredPositions(key),
   )
@@ -378,6 +388,15 @@ function GraphCanvas({
   const [exportDraft, setExportDraft] = useState<ExportDraft | null>(null)
   const [isExportingFullGraph, setIsExportingFullGraph] = useState(false)
   const [exportStatus, setExportStatus] = useState<ExportStatus | null>(null)
+  const effectiveSelectedNodeId = isExportingFullGraph ? null : selectedNodeId
+  const selectedNode = document.graph.nodes.find((node) => node.id === selectedNodeId) ?? null
+  const portIndex = useMemo(() => createNodePortIndex(document.graph), [document.graph])
+  const renderedNodes = useMemo(() => toReactFlowNodes({
+    graph: document.graph,
+    portIndex,
+    searchValue: '',
+    selectedNodeId: effectiveSelectedNodeId,
+  }), [document.graph, effectiveSelectedNodeId, portIndex])
   const nodes = useMemo(
     () =>
       renderedNodes.map((node) => ({
@@ -389,8 +408,8 @@ function GraphCanvas({
   const hasManualLayout = Object.keys(manualPositions).length > 0
   const edges = useMemo(() => toReactFlowEdges({
     graph: document.graph,
-    selectedNodeId,
-  }), [document.graph, selectedNodeId])
+    selectedNodeId: effectiveSelectedNodeId,
+  }), [document.graph, effectiveSelectedNodeId])
 
   useEffect(() => {
     if (!flow || !nodes.length) {
@@ -404,6 +423,10 @@ function GraphCanvas({
   }, [document.id, flow, nodes.length])
 
   const handleNodeClick: NodeMouseHandler<TechnicalFlowNode> = (_, node) => {
+    if (node.id === selectedNodeId) {
+      return
+    }
+
     onSelectNode(node.id)
   }
   const handleNodesChange = (changes: NodeChange<TechnicalFlowNode>[]) => {
@@ -463,6 +486,10 @@ function GraphCanvas({
       return
     }
 
+    if (handledFocusRevisionRef.current === focusRequestRevision) {
+      return
+    }
+
     if (!flow || !selectedNodeId) {
       return
     }
@@ -487,6 +514,7 @@ function GraphCanvas({
         zoom: nextZoom,
       },
     )
+    handledFocusRevisionRef.current = focusRequestRevision
   }, [flow, focusRequestRevision, nodes, selectedNodeId])
 
   const handleFocusSelected = () => {
@@ -648,7 +676,11 @@ function GraphCanvas({
           onNodeClick={handleNodeClick}
           onNodeDragStop={handleNodeDragStop}
           onNodesChange={handleNodesChange}
-          onPaneClick={() => onSelectNode(null)}
+          onPaneClick={() => {
+            if (selectedNodeId) {
+              onSelectNode(null)
+            }
+          }}
           onlyRenderVisibleElements={!isExportingFullGraph}
           proOptions={{ hideAttribution: true }}
         >
@@ -698,6 +730,17 @@ function GraphCanvas({
             <button className="graph-inline-action" onClick={handleResetLayout} type="button">
               {hasManualLayout ? 'Reset Layout' : 'Auto Layout'}
             </button>
+            {simulation ? (
+              <div className="graph-simulation" data-export-exclude="true">
+                <IconButton
+                  className={simulation.tone ? `tone-${simulation.tone}` : undefined}
+                  disabled={simulation.isRunning || Boolean(simulation.disabledReason)}
+                  icon="play"
+                  label={simulation.disabledReason ?? 'Pipeline Simulation 실행'}
+                  onClick={simulation.onRun}
+                />
+              </div>
+            ) : null}
             <div className="graph-export" data-export-exclude="true">
               <IconButton
                 active={exportMenuOpen}
@@ -729,6 +772,16 @@ function GraphCanvas({
             role="status"
           >
             {exportStatus.message}
+          </div>
+        ) : null}
+
+        {simulation?.message ? (
+          <div
+            className={`graph-simulation-status graph-simulation-status--${simulation.tone ?? 'info'}`}
+            data-export-exclude="true"
+            role="status"
+          >
+            {simulation.message}
           </div>
         ) : null}
 

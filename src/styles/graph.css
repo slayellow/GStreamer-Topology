@@ -101,6 +101,21 @@
   filter: none !important;
 }
 
+.graph-stage.is-exporting-full .technical-node,
+.graph-stage.is-exporting-full .technical-node.is-selected,
+.graph-stage.is-exporting-full .technical-node__port,
+.graph-stage.is-exporting-full .react-flow__edge,
+.graph-stage.is-exporting-full .react-flow__edge *,
+.graph-stage.is-exporting-full .react-flow__node {
+  animation: none !important;
+  transition: none !important;
+}
+
+.graph-stage.is-exporting-full .technical-node.is-selected {
+  border-color: transparent !important;
+  transform: none !important;
+}
+
 .technical-edge.is-muted {
   pointer-events: none;
 }
@@ -233,10 +248,23 @@
   position: relative;
 }
 
-.graph-export .icon-button {
+.graph-export .icon-button,
+.graph-simulation .icon-button {
   width: 34px;
   height: 34px;
   box-shadow: none;
+}
+
+.graph-simulation .icon-button.tone-success {
+  color: #13734a;
+}
+
+.graph-simulation .icon-button.tone-error {
+  color: #a73d3a;
+}
+
+.graph-simulation .icon-button.tone-warning {
+  color: #9a6a10;
 }
 
 .graph-export__menu {
@@ -285,12 +313,40 @@
   box-shadow: var(--shadow-soft);
 }
 
+.graph-simulation-status {
+  position: absolute;
+  left: 18px;
+  bottom: 18px;
+  z-index: 8;
+  max-width: min(620px, calc(100% - 36px));
+  padding: 10px 12px;
+  border: 1px solid rgba(23, 49, 82, 0.1);
+  border-radius: 14px;
+  background: rgba(247, 251, 255, 0.96);
+  color: var(--text-soft);
+  font-size: 0.82rem;
+  font-weight: 800;
+  box-shadow: var(--shadow-soft);
+}
+
 .graph-export-status--success {
   color: #13734a;
 }
 
 .graph-export-status--error {
   color: #a73d3a;
+}
+
+.graph-simulation-status--success {
+  color: #13734a;
+}
+
+.graph-simulation-status--error {
+  color: #a73d3a;
+}
+
+.graph-simulation-status--warning {
+  color: #9a6a10;
 }
 
 .technical-node {

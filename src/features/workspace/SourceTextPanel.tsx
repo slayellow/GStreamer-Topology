@@ -1,4 +1,4 @@
-import { useLayoutEffect, useRef } from 'react'
+import { useLayoutEffect, useMemo, useRef } from 'react'
 import type {
   PipelineDiagnostic,
   PipelineDocumentViewModel,
@@ -164,9 +164,15 @@ function SourceTextPanel({
   const codeScrollRef = useRef<HTMLPreElement | null>(null)
   const text = document.normalizedText
   const activeSpan = focusedSource?.span ?? selectedNode?.sourceSpan
-  const selectedSpan = validSpan(text, activeSpan)
-  const clickableSpans = nodeSourceSpans(text, document.graph.nodes)
-  const textSegments = sourceTextSegments(text, clickableSpans, selectedSpan)
+  const selectedSpan = useMemo(() => validSpan(text, activeSpan), [activeSpan, text])
+  const clickableSpans = useMemo(
+    () => nodeSourceSpans(text, document.graph.nodes),
+    [document.graph.nodes, text],
+  )
+  const textSegments = useMemo(
+    () => sourceTextSegments(text, clickableSpans, selectedSpan),
+    [clickableSpans, selectedSpan, text],
+  )
   const highlightSegmentKey = textSegments.find((segment) => segment.isHighlighted)
   const firstHighlightKey = highlightSegmentKey
     ? `${highlightSegmentKey.start}-${highlightSegmentKey.end}`
