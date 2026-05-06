@@ -117,6 +117,18 @@ export type ElementMetadataResponse = {
   diagnostic?: string | null
 }
 
+export type PipelineSimulationResponse = {
+  available: boolean
+  authority: MetadataAuthority
+  success: boolean
+  timed_out: boolean
+  exit_status?: number | null
+  stdout: string
+  stderr: string
+  diagnostic?: string | null
+  command: string
+}
+
 export function isTauriRuntime() {
   return typeof window !== 'undefined' && '__TAURI_INTERNALS__' in (window as TauriWindow)
 }
@@ -157,6 +169,10 @@ export async function inspectLocalElement(factoryName: string) {
   })
 }
 
+export async function simulateLocalPipeline(rawText: string) {
+  return invoke<PipelineSimulationResponse>('simulate_local_pipeline', { rawText })
+}
+
 export async function probeRemoteTarget(
   request: RemoteTargetInput,
   sampleElement?: string,
@@ -193,5 +209,18 @@ export async function inspectRemoteElement(
       port: Number(request.port || 22),
     },
     factoryName,
+  })
+}
+
+export async function simulateRemotePipeline(
+  request: RemoteTargetInput,
+  rawText: string,
+) {
+  return invoke<PipelineSimulationResponse>('simulate_remote_pipeline', {
+    request: {
+      ...request,
+      port: Number(request.port || 22),
+    },
+    rawText,
   })
 }

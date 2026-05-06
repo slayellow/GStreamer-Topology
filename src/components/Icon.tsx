@@ -8,6 +8,7 @@ type IconName =
   | 'info'
   | 'monitor'
   | 'panelRight'
+  | 'play'
   | 'server'
 
 type IconProps = {
@@ -97,6 +98,12 @@ function Icon({ name }: IconProps) {
           <path d="M15 4v16" />
           <path d="M7 8h4" />
           <path d="M7 12h4" />
+        </svg>
+      )
+    case 'play':
+      return (
+        <svg {...commonProps}>
+          <path d="M7 4v16l13-8Z" />
         </svg>
       )
     case 'server':

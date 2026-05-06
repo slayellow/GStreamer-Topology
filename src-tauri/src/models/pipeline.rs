@@ -207,3 +207,16 @@ pub struct ElementMetadataResponse {
     pub raw_output: Option<String>,
     pub diagnostic: Option<String>,
 }
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct PipelineSimulationResponse {
+    pub available: bool,
+    pub authority: MetadataAuthority,
+    pub success: bool,
+    pub timed_out: bool,
+    pub exit_status: Option<i32>,
+    pub stdout: String,
+    pub stderr: String,
+    pub diagnostic: Option<String>,
+    pub command: String,
+}

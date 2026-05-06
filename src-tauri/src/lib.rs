@@ -11,6 +11,8 @@ pub fn run() {
             commands::pipeline::parse_pipeline_text,
             commands::pipeline::probe_local_gstreamer,
             commands::pipeline::probe_remote_target,
+            commands::pipeline::simulate_local_pipeline,
+            commands::pipeline::simulate_remote_pipeline,
             commands::pipeline::load_remote_pipeline,
             commands::pipeline::save_export_file,
             commands::pipeline::save_export_file_to_downloads,

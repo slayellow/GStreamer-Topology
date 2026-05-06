@@ -3,7 +3,10 @@ import {
   inspectLocalElement,
   inspectRemoteElement,
   isTauriRuntime,
+  simulateLocalPipeline,
+  simulateRemotePipeline,
   type ElementMetadataResponse,
+  type PipelineSimulationResponse,
   type RemoteTargetInput,
 } from '../../app/backend.ts'
 import type { GStreamerRuntimeStatus, RuntimeEndpointStatus } from '../../app/status.ts'
@@ -41,6 +44,12 @@ type SourceFocus = {
   span: SourceSpan
 }
 
+type SimulationUiState = {
+  isRunning: boolean
+  message?: string
+  tone?: 'error' | 'info' | 'success' | 'warning'
+}
+
 function findNode(
   document: PipelineDocumentViewModel,
   nodeId: string | null,
@@ -68,6 +77,31 @@ function panelLabel(panel: WorkspacePanel) {
   }
 }
 
+function oneLine(value: string) {
+  return value
+    .split('\n')
+    .map((line) => line.trim())
+    .find(Boolean)
+}
+
+function simulationResultMessage(result: PipelineSimulationResponse) {
+  const detail = result.diagnostic ?? oneLine(result.stderr) ?? oneLine(result.stdout)
+
+  if (!result.available) {
+    return `Simulation 불가: ${detail ?? 'GStreamer 실행 API를 찾지 못했습니다.'}`
+  }
+
+  if (result.success && result.timed_out) {
+    return `Simulation 통과: 즉시 오류가 없어 5초 후 중단했습니다.${detail ? ` (${detail})` : ''}`
+  }
+
+  if (result.success) {
+    return 'Simulation 통과: GStreamer가 Pipeline을 오류 없이 실행했습니다.'
+  }
+
+  return `Simulation 실패: ${detail ?? 'gst-launch-1.0 실행 중 오류가 발생했습니다.'}`
+}
+
 function WorkspaceShell({
   document,
   gstreamerStatus,
@@ -83,6 +117,9 @@ function WorkspaceShell({
   const [bottomPanelHeight, setBottomPanelHeight] = useState(320)
   const [sourceFocus, setSourceFocus] = useState<SourceFocus | null>(null)
   const [metadataByFactory, setMetadataByFactory] = useState<Record<string, MetadataEntry>>({})
+  const [simulationStatus, setSimulationStatus] = useState<SimulationUiState>({
+    isRunning: false,
+  })
 
   const selectedNode = findNode(document, selectedNodeId)
   const syntaxDiagnostics = document.diagnostics.filter(
@@ -114,7 +151,7 @@ function WorkspaceShell({
       }
 
   useEffect(() => {
-    if (!selectedNode || !isTauriRuntime()) {
+    if (!selectedNode || !isTauriRuntime() || activePanel !== 'inspector') {
       return
     }
 
@@ -162,7 +199,64 @@ function WorkspaceShell({
     return () => {
       isCancelled = true
     }
-  }, [metadataByFactory, remoteTarget, selectedNode])
+  }, [activePanel, metadataByFactory, remoteTarget, selectedNode])
+
+  const simulationDisabledReason = remoteTarget
+    ? gstreamerStatus.remote.state === 'connected'
+      ? undefined
+      : gstreamerStatus.remote.state === 'checking'
+        ? 'Remote GStreamer API 확인 중입니다.'
+        : 'Remote 연결 또는 GStreamer API 확인 후 Simulation을 실행할 수 있습니다.'
+    : gstreamerStatus.local.state === 'connected'
+      ? undefined
+      : gstreamerStatus.local.state === 'checking'
+        ? '로컬 GStreamer API 확인 중입니다.'
+        : '로컬 GStreamer API가 없어 Simulation을 실행할 수 없습니다.'
+
+  async function handleRunSimulation() {
+    if (simulationDisabledReason) {
+      setSimulationStatus({
+        isRunning: false,
+        message: simulationDisabledReason,
+        tone: 'warning',
+      })
+      return
+    }
+
+    if (!isTauriRuntime()) {
+      setSimulationStatus({
+        isRunning: false,
+        message: 'Simulation은 데스크톱 앱 실행 환경에서 사용할 수 있습니다.',
+        tone: 'warning',
+      })
+      return
+    }
+
+    setSimulationStatus({
+      isRunning: true,
+      message: 'Simulation 실행 중... 최대 5초 동안 즉시 오류를 확인합니다.',
+      tone: 'info',
+    })
+
+    try {
+      const result = remoteTarget
+        ? await simulateRemotePipeline(remoteTarget, document.normalizedText)
+        : await simulateLocalPipeline(document.normalizedText)
+
+      setSimulationStatus({
+        isRunning: false,
+        message: simulationResultMessage(result),
+        tone: result.success ? 'success' : 'error',
+      })
+    } catch (error) {
+      console.error(error)
+      setSimulationStatus({
+        isRunning: false,
+        message: `Simulation 실패: ${error instanceof Error ? error.message : '알 수 없는 오류'}`,
+        tone: 'error',
+      })
+    }
+  }
 
   function togglePanel(panel: WorkspacePanel) {
     setActivePanel((current) => (current === panel ? null : panel))
@@ -283,6 +377,13 @@ function WorkspaceShell({
               document={document}
               focusRequestRevision={canvasFocusRevision}
               selectedNodeId={selectedNodeId}
+              simulation={{
+                disabledReason: simulationDisabledReason,
+                isRunning: simulationStatus.isRunning,
+                message: simulationStatus.message ?? simulationDisabledReason,
+                onRun: () => void handleRunSimulation(),
+                tone: simulationStatus.tone ?? (simulationDisabledReason ? 'warning' : undefined),
+              }}
               onSelectNode={handleSelectNode}
             />
           </section>
