@@ -1,11 +1,17 @@
 import { useEffect, useState, type PointerEvent as ReactPointerEvent } from 'react'
 import {
+  getLocalPlaybackStatus,
   inspectLocalElement,
   inspectRemoteElement,
   isTauriRuntime,
+  prepareLocalPlayback,
   simulateLocalPipeline,
   simulateRemotePipeline,
+  startLocalPlayback,
+  stopLocalPlayback,
   type ElementMetadataResponse,
+  type PlaybackPrepareResponse,
+  type PlaybackStatusResponse,
   type PipelineSimulationResponse,
   type RemoteTargetInput,
 } from '../../app/backend.ts'
@@ -13,6 +19,7 @@ import type { GStreamerRuntimeStatus, RuntimeEndpointStatus } from '../../app/st
 import { ConnectionBadge } from '../../components/ConnectionBadge.tsx'
 import { IconButton } from '../../components/IconButton.tsx'
 import { InspectorPanel } from '../inspector/InspectorPanel.tsx'
+import { PlaybackPanel } from '../playback/PlaybackPanel.tsx'
 import { GraphCanvas } from '../../graph/GraphCanvas.tsx'
 import { DiagnosticsPanel } from './DiagnosticsPanel.tsx'
 import { SourceTextPanel } from './SourceTextPanel.tsx'
@@ -48,6 +55,22 @@ type SimulationUiState = {
   isRunning: boolean
   message?: string
   tone?: 'error' | 'info' | 'success' | 'warning'
+}
+
+type PlaybackUiState = {
+  isPreparing: boolean
+  isStarting: boolean
+  isStopping: boolean
+  message?: string
+  prepareResult?: PlaybackPrepareResponse
+  status: PlaybackStatusResponse
+}
+
+function idlePlaybackStatus(): PlaybackStatusResponse {
+  return {
+    state: 'idle',
+    message: 'Playback Pipeline이 실행 중이 아닙니다.',
+  }
 }
 
 function findNode(
@@ -119,6 +142,13 @@ function WorkspaceShell({
   const [metadataByFactory, setMetadataByFactory] = useState<Record<string, MetadataEntry>>({})
   const [simulationStatus, setSimulationStatus] = useState<SimulationUiState>({
     isRunning: false,
+  })
+  const [isPlaybackOpen, setIsPlaybackOpen] = useState(false)
+  const [playbackState, setPlaybackState] = useState<PlaybackUiState>({
+    isPreparing: false,
+    isStarting: false,
+    isStopping: false,
+    status: idlePlaybackStatus(),
   })
 
   const selectedNode = findNode(document, selectedNodeId)
@@ -213,6 +243,44 @@ function WorkspaceShell({
         ? '로컬 GStreamer API 확인 중입니다.'
         : '로컬 GStreamer API가 없어 Simulation을 실행할 수 없습니다.'
 
+  const playbackDisabledReason = remoteTarget
+    ? 'Sprint 09 Playback MVP는 Local GStreamer 재생만 지원합니다.'
+    : gstreamerStatus.local.state === 'connected'
+      ? undefined
+      : gstreamerStatus.local.state === 'checking'
+        ? '로컬 GStreamer API 확인 중입니다.'
+        : '로컬 GStreamer API가 없어 Playback을 실행할 수 없습니다.'
+
+  useEffect(() => {
+    if (!isPlaybackOpen || !isTauriRuntime() || playbackState.status.state !== 'playing') {
+      return
+    }
+
+    const timerId = window.setInterval(() => {
+      getLocalPlaybackStatus()
+        .then((status) => {
+          setPlaybackState((current) => ({
+            ...current,
+            message: status.message ?? current.message,
+            status,
+          }))
+        })
+        .catch((error) => {
+          console.error(error)
+          setPlaybackState((current) => ({
+            ...current,
+            message: 'Playback 상태 확인에 실패했습니다.',
+            status: {
+              state: 'error',
+              message: 'Playback 상태 확인에 실패했습니다.',
+            },
+          }))
+        })
+    }, 1500)
+
+    return () => window.clearInterval(timerId)
+  }, [isPlaybackOpen, playbackState.status.state])
+
   async function handleRunSimulation() {
     if (simulationDisabledReason) {
       setSimulationStatus({
@@ -256,6 +324,153 @@ function WorkspaceShell({
         tone: 'error',
       })
     }
+  }
+
+  async function handlePreparePlayback() {
+    if (playbackDisabledReason) {
+      setPlaybackState((current) => ({
+        ...current,
+        message: playbackDisabledReason,
+        status: {
+          state: 'error',
+          message: playbackDisabledReason,
+        },
+      }))
+      return
+    }
+
+    if (!isTauriRuntime()) {
+      setPlaybackState((current) => ({
+        ...current,
+        message: 'Playback은 데스크톱 앱 실행 환경에서 사용할 수 있습니다.',
+        status: {
+          state: 'error',
+          message: 'Playback은 데스크톱 앱 실행 환경에서 사용할 수 있습니다.',
+        },
+      }))
+      return
+    }
+
+    setPlaybackState((current) => ({
+      ...current,
+      isPreparing: true,
+      message: 'RTP/RTSP 스트림을 분석 중입니다.',
+    }))
+
+    try {
+      const prepareResult = await prepareLocalPlayback(document.normalizedText)
+      setPlaybackState((current) => ({
+        ...current,
+        isPreparing: false,
+        message: prepareResult.playable
+          ? `재생 가능한 스트림 ${prepareResult.streams.length}개를 감지했습니다.`
+          : (prepareResult.diagnostic ?? '재생 가능한 RTP/RTSP 스트림이 없습니다.'),
+        prepareResult,
+        status: prepareResult.playable
+          ? {
+              state: 'idle',
+              message: `재생 가능한 스트림 ${prepareResult.streams.length}개를 감지했습니다.`,
+            }
+          : {
+              state: 'error',
+              message: prepareResult.diagnostic ?? '재생 가능한 RTP/RTSP 스트림이 없습니다.',
+            },
+      }))
+    } catch (error) {
+      console.error(error)
+      setPlaybackState((current) => ({
+        ...current,
+        isPreparing: false,
+        message: 'Playback 준비에 실패했습니다.',
+        status: {
+          state: 'error',
+          message: 'Playback 준비에 실패했습니다.',
+        },
+      }))
+    }
+  }
+
+  async function handleStartPlayback() {
+    if (playbackDisabledReason) {
+      setPlaybackState((current) => ({
+        ...current,
+        message: playbackDisabledReason,
+      }))
+      return
+    }
+
+    setPlaybackState((current) => ({
+      ...current,
+      isStarting: true,
+      message: 'Playback Pipeline을 실행 중입니다.',
+    }))
+
+    try {
+      const status = await startLocalPlayback(document.normalizedText)
+      setPlaybackState((current) => ({
+        ...current,
+        isStarting: false,
+        message: status.message ?? current.message,
+        status,
+      }))
+    } catch (error) {
+      console.error(error)
+      setPlaybackState((current) => ({
+        ...current,
+        isStarting: false,
+        message: 'Playback 실행에 실패했습니다.',
+        status: {
+          state: 'error',
+          message: 'Playback 실행에 실패했습니다.',
+        },
+      }))
+    }
+  }
+
+  async function handleStopPlayback() {
+    setPlaybackState((current) => ({
+      ...current,
+      isStopping: true,
+      message: 'Playback Pipeline을 정지 중입니다.',
+    }))
+
+    try {
+      const status = await stopLocalPlayback()
+      setPlaybackState((current) => ({
+        ...current,
+        isStopping: false,
+        message: status.message ?? current.message,
+        status,
+      }))
+    } catch (error) {
+      console.error(error)
+      setPlaybackState((current) => ({
+        ...current,
+        isStopping: false,
+        message: 'Playback 정지에 실패했습니다.',
+        status: {
+          state: 'error',
+          message: 'Playback 정지에 실패했습니다.',
+        },
+      }))
+    }
+  }
+
+  function handleOpenPlayback() {
+    setIsPlaybackOpen(true)
+    if (playbackDisabledReason) {
+      setPlaybackState((current) => ({
+        ...current,
+        message: playbackDisabledReason,
+      }))
+    }
+  }
+
+  function handleClosePlayback() {
+    if (playbackState.status.state === 'playing') {
+      void handleStopPlayback()
+    }
+    setIsPlaybackOpen(false)
   }
 
   function togglePanel(panel: WorkspacePanel) {
@@ -376,6 +591,18 @@ function WorkspaceShell({
             <GraphCanvas
               document={document}
               focusRequestRevision={canvasFocusRevision}
+              playback={{
+                active: isPlaybackOpen,
+                disabledReason: undefined,
+                onOpen: handleOpenPlayback,
+                tone: playbackState.status.state === 'error'
+                  ? 'error'
+                  : playbackState.status.state === 'playing'
+                    ? 'success'
+                    : playbackDisabledReason
+                      ? 'warning'
+                      : undefined,
+              }}
               selectedNodeId={selectedNodeId}
               simulation={{
                 disabledReason: simulationDisabledReason,
@@ -454,6 +681,24 @@ function WorkspaceShell({
             </section>
           ) : null}
         </div>
+
+        {isPlaybackOpen ? (
+          <PlaybackPanel
+            disabledReason={playbackDisabledReason}
+            documentTitle={document.title}
+            isPreparing={playbackState.isPreparing}
+            isStarting={playbackState.isStarting}
+            isStopping={playbackState.isStopping}
+            message={playbackState.message}
+            prepareResult={playbackState.prepareResult}
+            rawText={document.normalizedText}
+            status={playbackState.status}
+            onClose={handleClosePlayback}
+            onPlay={() => void handleStartPlayback()}
+            onPrepare={() => void handlePreparePlayback()}
+            onStop={() => void handleStopPlayback()}
+          />
+        ) : null}
       </section>
     </main>
   )

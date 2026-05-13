@@ -191,6 +191,7 @@ pub struct ElementPadTemplateMetadata {
     pub name: String,
     pub direction: String,
     pub presence: Option<String>,
+    pub caps: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -219,4 +220,59 @@ pub struct PipelineSimulationResponse {
     pub stderr: String,
     pub diagnostic: Option<String>,
     pub command: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum PlaybackProtocol {
+    Rtsp,
+    Rtp,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum PlaybackMediaKind {
+    Audio,
+    Unknown,
+    Video,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct PlaybackStream {
+    pub id: String,
+    pub protocol: PlaybackProtocol,
+    pub media_kind: PlaybackMediaKind,
+    pub uri: Option<String>,
+    pub host: Option<String>,
+    pub port: Option<u16>,
+    pub caps: Option<String>,
+    pub source: String,
+    pub playback_pipeline: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct PlaybackPrepareResponse {
+    pub available: bool,
+    pub playable: bool,
+    pub streams: Vec<PlaybackStream>,
+    pub generated_pipeline: Option<String>,
+    pub diagnostic: Option<String>,
+    pub command: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum PlaybackProcessState {
+    Error,
+    Idle,
+    Playing,
+    Stopped,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct PlaybackStatusResponse {
+    pub state: PlaybackProcessState,
+    pub pid: Option<u32>,
+    pub command: Option<String>,
+    pub message: Option<String>,
 }

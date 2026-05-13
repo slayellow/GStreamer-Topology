@@ -3,19 +3,40 @@ use std::fs;
 use std::io::Read;
 use std::net::TcpStream;
 use std::path::{Path, PathBuf};
-use std::process::{Command, Output, Stdio};
+use std::process::{Child, Command, Output, Stdio};
+use std::sync::Mutex;
 use std::thread;
 use std::time::{Duration, Instant};
 
 use base64::{engine::general_purpose, Engine as _};
 use ssh2::Session;
+use tauri::State;
 
 use crate::models::{
     ElementMetadataResponse, ElementPadTemplateMetadata, ElementPropertyMetadata,
     GStreamerProbeResponse, MetadataAuthority, PipelineDocument, PipelineSimulationResponse,
-    RemoteProbeResponse, RemoteTargetRequest, SourceKind,
+    PlaybackMediaKind, PlaybackPrepareResponse, PlaybackProcessState, PlaybackProtocol,
+    PlaybackStatusResponse, PlaybackStream, RemoteProbeResponse, RemoteTargetRequest, SourceKind,
 };
 use crate::parser::{normalize_text, parse_document};
+
+#[derive(Default)]
+pub struct PlaybackState {
+    session: Mutex<Option<PlaybackSession>>,
+}
+
+struct PlaybackSession {
+    child: Child,
+    command: String,
+    pid: u32,
+}
+
+impl Drop for PlaybackSession {
+    fn drop(&mut self) {
+        let _ = self.child.kill();
+        let _ = self.child.wait();
+    }
+}
 
 #[tauri::command]
 pub fn parse_pipeline_text(raw_text: String, source_name: Option<String>) -> PipelineDocument {
@@ -222,6 +243,23 @@ fn gst_launch_executable_name() -> &'static str {
     }
 }
 
+fn hidden_command(program: &Path) -> Command {
+    let mut command = Command::new(program);
+    hide_console_window(&mut command);
+    command
+}
+
+#[cfg(target_os = "windows")]
+fn hide_console_window(command: &mut Command) {
+    use std::os::windows::process::CommandExt;
+
+    const CREATE_NO_WINDOW: u32 = 0x08000000;
+    command.creation_flags(CREATE_NO_WINDOW);
+}
+
+#[cfg(not(target_os = "windows"))]
+fn hide_console_window(_command: &mut Command) {}
+
 fn push_unique_candidate(candidates: &mut Vec<PathBuf>, path: PathBuf) {
     if !candidates.iter().any(|candidate| candidate == &path) {
         candidates.push(path);
@@ -297,7 +335,7 @@ fn resolve_gst_inspect_command() -> Result<PathBuf, String> {
     let mut diagnostics = Vec::new();
 
     for candidate in &candidates {
-        match Command::new(candidate).arg("--version").output() {
+        match hidden_command(candidate).arg("--version").output() {
             Ok(output) if output.status.success() => return Ok(candidate.clone()),
             Ok(output) => {
                 let stderr = String::from_utf8_lossy(&output.stderr)
@@ -322,7 +360,7 @@ fn resolve_gst_launch_command() -> Result<PathBuf, String> {
     let mut diagnostics = Vec::new();
 
     for candidate in &candidates {
-        match Command::new(candidate).arg("--version").output() {
+        match hidden_command(candidate).arg("--version").output() {
             Ok(output) if output.status.success() => return Ok(candidate.clone()),
             Ok(output) => {
                 let stderr = String::from_utf8_lossy(&output.stderr)
@@ -344,7 +382,7 @@ fn resolve_gst_launch_command() -> Result<PathBuf, String> {
 
 fn run_gst_inspect(args: &[&str]) -> Result<(PathBuf, Output), String> {
     let command_path = resolve_gst_inspect_command()?;
-    let output = Command::new(&command_path)
+    let output = hidden_command(&command_path)
         .args(args)
         .output()
         .map_err(|error| {
@@ -422,10 +460,7 @@ fn split_pipeline_arguments(pipeline: &str) -> Result<Vec<String>, String> {
 }
 
 fn gst_launch_args(raw_text: &str) -> Result<Vec<String>, String> {
-    let mut args = vec![
-        "--gst-disable-registry-fork".to_string(),
-        "-q".to_string(),
-    ];
+    let mut args = vec!["--gst-disable-registry-fork".to_string(), "-q".to_string()];
     args.extend(split_pipeline_arguments(raw_text)?);
     Ok(args)
 }
@@ -435,7 +470,7 @@ fn output_with_timeout(
     args: &[String],
     timeout: Duration,
 ) -> Result<(Output, bool), String> {
-    let mut child = Command::new(command_path)
+    let mut child = hidden_command(command_path)
         .args(args)
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -462,9 +497,7 @@ fn output_with_timeout(
                 return child
                     .wait_with_output()
                     .map(|output| (output, true))
-                    .map_err(|error| {
-                        format!("failed to stop gst-launch after timeout: {error}")
-                    });
+                    .map_err(|error| format!("failed to stop gst-launch after timeout: {error}"));
             }
             Ok(None) => thread::sleep(Duration::from_millis(50)),
             Err(error) => {
@@ -517,11 +550,18 @@ pub fn simulate_local_pipeline(raw_text: String) -> PipelineSimulationResponse {
             let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
             let success = output.status.success() || timed_out;
             let diagnostic = if timed_out {
-                Some("Simulation stopped after 5 seconds without an immediate GStreamer error.".to_string())
+                Some(
+                    "Simulation stopped after 5 seconds without an immediate GStreamer error."
+                        .to_string(),
+                )
             } else if success {
                 None
             } else {
-                Some(stderr.clone().if_empty("gst-launch-1.0 reported a failure."))
+                Some(
+                    stderr
+                        .clone()
+                        .if_empty("gst-launch-1.0 reported a failure."),
+                )
             };
 
             PipelineSimulationResponse {
@@ -547,6 +587,507 @@ pub fn simulate_local_pipeline(raw_text: String) -> PipelineSimulationResponse {
             diagnostic: Some(error),
             command,
         },
+    }
+}
+
+#[tauri::command]
+pub fn prepare_local_playback(raw_text: String) -> PlaybackPrepareResponse {
+    let streams = detect_playback_streams(&raw_text);
+    let generated_pipeline = build_generated_playback_pipeline(&streams);
+    let command_path = match resolve_gst_launch_command() {
+        Ok(command_path) => command_path,
+        Err(error) => {
+            return PlaybackPrepareResponse {
+                available: false,
+                playable: false,
+                streams,
+                generated_pipeline,
+                diagnostic: Some(error),
+                command: gst_launch_executable_name().to_string(),
+            };
+        }
+    };
+
+    let playable = !streams.is_empty() && generated_pipeline.is_some();
+    let diagnostic = if playable {
+        None
+    } else {
+        Some("RTP/RTSP IP/Port가 있는 재생 가능한 스트림을 찾지 못했습니다.".to_string())
+    };
+
+    PlaybackPrepareResponse {
+        available: true,
+        playable,
+        streams,
+        generated_pipeline,
+        diagnostic,
+        command: command_path.display().to_string(),
+    }
+}
+
+#[tauri::command]
+pub fn start_local_playback(
+    raw_text: String,
+    state: State<'_, PlaybackState>,
+) -> PlaybackStatusResponse {
+    let prepare = prepare_local_playback(raw_text);
+    if !prepare.available || !prepare.playable {
+        return PlaybackStatusResponse {
+            state: PlaybackProcessState::Error,
+            pid: None,
+            command: Some(prepare.command),
+            message: prepare.diagnostic,
+        };
+    }
+
+    let command_path = match resolve_gst_launch_command() {
+        Ok(command_path) => command_path,
+        Err(error) => {
+            return PlaybackStatusResponse {
+                state: PlaybackProcessState::Error,
+                pid: None,
+                command: Some(gst_launch_executable_name().to_string()),
+                message: Some(error),
+            };
+        }
+    };
+    let generated_pipeline = match prepare.generated_pipeline {
+        Some(pipeline) => pipeline,
+        None => {
+            return PlaybackStatusResponse {
+                state: PlaybackProcessState::Error,
+                pid: None,
+                command: Some(command_path.display().to_string()),
+                message: Some("재생용 Pipeline을 생성하지 못했습니다.".to_string()),
+            };
+        }
+    };
+    let args = match gst_launch_args(&generated_pipeline) {
+        Ok(args) => args,
+        Err(error) => {
+            return PlaybackStatusResponse {
+                state: PlaybackProcessState::Error,
+                pid: None,
+                command: Some(command_path.display().to_string()),
+                message: Some(error),
+            };
+        }
+    };
+    let command_text = format!("{} {}", command_path.display(), args.join(" "));
+    let mut session = match state.session.lock() {
+        Ok(session) => session,
+        Err(_) => {
+            return PlaybackStatusResponse {
+                state: PlaybackProcessState::Error,
+                pid: None,
+                command: Some(command_text),
+                message: Some("Playback 상태 잠금을 가져오지 못했습니다.".to_string()),
+            };
+        }
+    };
+
+    if let Some(existing) = session.as_mut() {
+        match existing.child.try_wait() {
+            Ok(None) => {
+                return PlaybackStatusResponse {
+                    state: PlaybackProcessState::Playing,
+                    pid: Some(existing.pid),
+                    command: Some(existing.command.clone()),
+                    message: Some("이미 실행 중인 Playback Pipeline이 있습니다.".to_string()),
+                };
+            }
+            Ok(Some(_)) => {
+                *session = None;
+            }
+            Err(error) => {
+                let command = existing.command.clone();
+                let _ = existing.child.kill();
+                let _ = existing.child.wait();
+                *session = None;
+                return PlaybackStatusResponse {
+                    state: PlaybackProcessState::Error,
+                    pid: None,
+                    command: Some(command),
+                    message: Some(format!("기존 Playback 상태 확인에 실패했습니다: {error}")),
+                };
+            }
+        }
+    }
+
+    let mut command = hidden_command(&command_path);
+    command
+        .args(&args)
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null());
+    match command.spawn() {
+        Ok(child) => {
+            let pid = child.id();
+            *session = Some(PlaybackSession {
+                child,
+                command: command_text.clone(),
+                pid,
+            });
+            PlaybackStatusResponse {
+                state: PlaybackProcessState::Playing,
+                pid: Some(pid),
+                command: Some(command_text),
+                message: Some("Playback Pipeline을 실행했습니다.".to_string()),
+            }
+        }
+        Err(error) => PlaybackStatusResponse {
+            state: PlaybackProcessState::Error,
+            pid: None,
+            command: Some(command_text),
+            message: Some(format!("Playback Pipeline 실행에 실패했습니다: {error}")),
+        },
+    }
+}
+
+#[tauri::command]
+pub fn stop_local_playback(state: State<'_, PlaybackState>) -> PlaybackStatusResponse {
+    let mut session = match state.session.lock() {
+        Ok(session) => session,
+        Err(_) => {
+            return PlaybackStatusResponse {
+                state: PlaybackProcessState::Error,
+                pid: None,
+                command: None,
+                message: Some("Playback 상태 잠금을 가져오지 못했습니다.".to_string()),
+            };
+        }
+    };
+
+    let Some(mut existing) = session.take() else {
+        return PlaybackStatusResponse {
+            state: PlaybackProcessState::Stopped,
+            pid: None,
+            command: None,
+            message: Some("실행 중인 Playback Pipeline이 없습니다.".to_string()),
+        };
+    };
+
+    let command = existing.command.clone();
+    let pid = existing.pid;
+    match existing.child.try_wait() {
+        Ok(Some(_)) => PlaybackStatusResponse {
+            state: PlaybackProcessState::Stopped,
+            pid: Some(pid),
+            command: Some(command),
+            message: Some("Playback Pipeline이 이미 종료되었습니다.".to_string()),
+        },
+        Ok(None) => {
+            let kill_result = existing.child.kill();
+            let wait_result = existing.child.wait();
+            if let Err(error) = kill_result {
+                return PlaybackStatusResponse {
+                    state: PlaybackProcessState::Error,
+                    pid: Some(pid),
+                    command: Some(command),
+                    message: Some(format!("Playback Pipeline 종료에 실패했습니다: {error}")),
+                };
+            }
+            if let Err(error) = wait_result {
+                return PlaybackStatusResponse {
+                    state: PlaybackProcessState::Error,
+                    pid: Some(pid),
+                    command: Some(command),
+                    message: Some(format!(
+                        "Playback Pipeline 종료 대기에 실패했습니다: {error}"
+                    )),
+                };
+            }
+            PlaybackStatusResponse {
+                state: PlaybackProcessState::Stopped,
+                pid: Some(pid),
+                command: Some(command),
+                message: Some("Playback Pipeline을 정지했습니다.".to_string()),
+            }
+        }
+        Err(error) => PlaybackStatusResponse {
+            state: PlaybackProcessState::Error,
+            pid: Some(pid),
+            command: Some(command),
+            message: Some(format!(
+                "Playback Pipeline 상태 확인에 실패했습니다: {error}"
+            )),
+        },
+    }
+}
+
+#[tauri::command]
+pub fn get_local_playback_status(state: State<'_, PlaybackState>) -> PlaybackStatusResponse {
+    let mut session = match state.session.lock() {
+        Ok(session) => session,
+        Err(_) => {
+            return PlaybackStatusResponse {
+                state: PlaybackProcessState::Error,
+                pid: None,
+                command: None,
+                message: Some("Playback 상태 잠금을 가져오지 못했습니다.".to_string()),
+            };
+        }
+    };
+
+    let Some(existing) = session.as_mut() else {
+        return PlaybackStatusResponse {
+            state: PlaybackProcessState::Idle,
+            pid: None,
+            command: None,
+            message: Some("Playback Pipeline이 실행 중이 아닙니다.".to_string()),
+        };
+    };
+
+    match existing.child.try_wait() {
+        Ok(None) => PlaybackStatusResponse {
+            state: PlaybackProcessState::Playing,
+            pid: Some(existing.pid),
+            command: Some(existing.command.clone()),
+            message: Some("Playback Pipeline이 실행 중입니다.".to_string()),
+        },
+        Ok(Some(status)) => {
+            let command = existing.command.clone();
+            let pid = existing.pid;
+            *session = None;
+            PlaybackStatusResponse {
+                state: PlaybackProcessState::Stopped,
+                pid: Some(pid),
+                command: Some(command),
+                message: Some(format!(
+                    "Playback Pipeline이 종료되었습니다{}.",
+                    status
+                        .code()
+                        .map(|code| format!(" (exit {code})"))
+                        .unwrap_or_default()
+                )),
+            }
+        }
+        Err(error) => {
+            let command = existing.command.clone();
+            let pid = existing.pid;
+            let _ = existing.child.kill();
+            let _ = existing.child.wait();
+            *session = None;
+            PlaybackStatusResponse {
+                state: PlaybackProcessState::Error,
+                pid: Some(pid),
+                command: Some(command),
+                message: Some(format!(
+                    "Playback Pipeline 상태 확인에 실패했습니다: {error}"
+                )),
+            }
+        }
+    }
+}
+
+fn detect_playback_streams(raw_text: &str) -> Vec<PlaybackStream> {
+    let mut streams = Vec::new();
+
+    for uri in extract_rtsp_urls(raw_text) {
+        if let Some((host, port)) = parse_rtsp_host_port(&uri) {
+            let stream_index = streams.len() + 1;
+            streams.push(PlaybackStream {
+                id: format!("rtsp-{stream_index}"),
+                protocol: PlaybackProtocol::Rtsp,
+                media_kind: infer_media_kind(&uri),
+                uri: Some(uri.clone()),
+                host: Some(host),
+                port: Some(port),
+                caps: None,
+                source: uri.clone(),
+                playback_pipeline: format!("playbin uri=\"{uri}\""),
+            });
+        }
+    }
+
+    for candidate in extract_rtp_candidates(raw_text) {
+        let Some(port) = candidate.port else {
+            continue;
+        };
+        let stream_index = streams.len() + 1;
+        let media_kind = infer_media_kind(&candidate.source);
+        let sink = match media_kind {
+            PlaybackMediaKind::Audio => "autoaudiosink",
+            PlaybackMediaKind::Unknown | PlaybackMediaKind::Video => "autovideosink",
+        };
+        let host_part = candidate
+            .host
+            .as_deref()
+            .map(|host| format!(" address={host}"))
+            .unwrap_or_default();
+        let caps_part = candidate
+            .caps
+            .as_deref()
+            .map(|caps| format!(" caps=\"{caps}\""))
+            .unwrap_or_default();
+        let playback_pipeline =
+            format!("udpsrc{host_part} port={port}{caps_part} ! decodebin ! {sink}");
+
+        streams.push(PlaybackStream {
+            id: format!("rtp-{stream_index}"),
+            protocol: PlaybackProtocol::Rtp,
+            media_kind,
+            uri: None,
+            host: candidate.host,
+            port: Some(port),
+            caps: candidate.caps,
+            source: candidate.source,
+            playback_pipeline,
+        });
+    }
+
+    streams
+}
+
+fn build_generated_playback_pipeline(streams: &[PlaybackStream]) -> Option<String> {
+    if streams.is_empty() {
+        return None;
+    }
+
+    Some(
+        streams
+            .iter()
+            .map(|stream| stream.playback_pipeline.as_str())
+            .collect::<Vec<_>>()
+            .join(" "),
+    )
+}
+
+fn extract_rtsp_urls(raw_text: &str) -> Vec<String> {
+    let mut urls = Vec::new();
+    let mut offset = 0;
+
+    while let Some(index) = raw_text[offset..].find("rtsp://") {
+        let start = offset + index;
+        let rest = &raw_text[start..];
+        let end = rest
+            .find(|character: char| {
+                character.is_whitespace()
+                    || matches!(character, '"' | '\'' | '`' | '|' | '&' | ';' | '<' | '>')
+            })
+            .unwrap_or(rest.len());
+        let uri = rest[..end]
+            .trim_end_matches(|character| matches!(character, ')' | ']' | ','))
+            .to_string();
+        if !uri.is_empty() && !urls.contains(&uri) {
+            urls.push(uri);
+        }
+        offset = start + end.max("rtsp://".len());
+    }
+
+    urls
+}
+
+fn parse_rtsp_host_port(uri: &str) -> Option<(String, u16)> {
+    let rest = uri.strip_prefix("rtsp://")?;
+    let authority = rest
+        .split(|character| matches!(character, '/' | '?' | '#'))
+        .next()
+        .filter(|value| !value.is_empty())?;
+    let host_port = authority.rsplit('@').next().unwrap_or(authority);
+    let (host, port_text) = host_port.rsplit_once(':')?;
+    let port = port_text.parse::<u16>().ok()?;
+    if host.is_empty() {
+        return None;
+    }
+
+    Some((
+        host.trim_matches(|character| matches!(character, '[' | ']'))
+            .to_string(),
+        port,
+    ))
+}
+
+struct RtpCandidate {
+    caps: Option<String>,
+    host: Option<String>,
+    port: Option<u16>,
+    source: String,
+}
+
+fn extract_rtp_candidates(raw_text: &str) -> Vec<RtpCandidate> {
+    let tokens = match split_pipeline_arguments(raw_text) {
+        Ok(tokens) => tokens,
+        Err(_) => raw_text
+            .split_whitespace()
+            .map(ToOwned::to_owned)
+            .collect::<Vec<_>>(),
+    };
+    let mut candidates = Vec::new();
+    let mut index = 0;
+
+    while index < tokens.len() {
+        if tokens[index] != "udpsrc" {
+            index += 1;
+            continue;
+        }
+
+        let mut source_tokens = vec![tokens[index].clone()];
+        let mut cursor = index + 1;
+        while cursor < tokens.len() && tokens[cursor] != "!" {
+            source_tokens.push(tokens[cursor].clone());
+            cursor += 1;
+        }
+        if cursor + 1 < tokens.len() && tokens[cursor + 1].contains("application/x-rtp") {
+            source_tokens.push(tokens[cursor + 1].clone());
+        }
+
+        let source = source_tokens.join(" ");
+        if !source.contains("application/x-rtp") {
+            index = cursor.saturating_add(1);
+            continue;
+        }
+
+        let mut host = None;
+        let mut port = None;
+        let mut caps = None;
+
+        for token in &source_tokens {
+            if let Some(value) = parse_token_value(token, "address")
+                .or_else(|| parse_token_value(token, "host"))
+                .or_else(|| parse_token_value(token, "multicast-group"))
+            {
+                host = Some(value);
+            }
+            if let Some(value) = parse_token_value(token, "port") {
+                port = value.parse::<u16>().ok();
+            }
+            if let Some(value) = parse_token_value(token, "caps") {
+                caps = Some(value);
+            } else if token.contains("application/x-rtp") {
+                caps.get_or_insert_with(|| token.trim_matches('"').to_string());
+            }
+        }
+
+        candidates.push(RtpCandidate {
+            caps,
+            host,
+            port,
+            source,
+        });
+        index = cursor.saturating_add(1);
+    }
+
+    candidates
+}
+
+fn parse_token_value(token: &str, key: &str) -> Option<String> {
+    let (candidate_key, value) = token.split_once('=')?;
+    if candidate_key != key {
+        return None;
+    }
+
+    Some(value.trim_matches('"').trim_matches('\'').to_string()).filter(|value| !value.is_empty())
+}
+
+fn infer_media_kind(value: &str) -> PlaybackMediaKind {
+    let lower = value.to_ascii_lowercase();
+    if lower.contains("audio") {
+        PlaybackMediaKind::Audio
+    } else if lower.contains("video") || lower.contains("h264") || lower.contains("h265") {
+        PlaybackMediaKind::Video
+    } else {
+        PlaybackMediaKind::Unknown
     }
 }
 
@@ -697,13 +1238,26 @@ pub fn simulate_remote_pipeline(
     let available = output.exit_status != 127;
     let success = available && (output.exit_status == 0 || timed_out);
     let diagnostic = if !available {
-        Some(output.stderr.clone().if_empty("gst-launch-1.0 is not available on remote target."))
+        Some(
+            output
+                .stderr
+                .clone()
+                .if_empty("gst-launch-1.0 is not available on remote target."),
+        )
     } else if timed_out {
-        Some("Remote simulation stopped after 5 seconds without an immediate GStreamer error.".to_string())
+        Some(
+            "Remote simulation stopped after 5 seconds without an immediate GStreamer error."
+                .to_string(),
+        )
     } else if success {
         None
     } else {
-        Some(output.stderr.clone().if_empty("remote gst-launch-1.0 reported a failure."))
+        Some(
+            output
+                .stderr
+                .clone()
+                .if_empty("remote gst-launch-1.0 reported a failure."),
+        )
     };
 
     Ok(PipelineSimulationResponse {
@@ -869,6 +1423,7 @@ fn parse_gst_inspect_output(
     };
     let mut section = "";
     let mut current_pad: Option<ElementPadTemplateMetadata> = None;
+    let mut collecting_pad_caps = false;
 
     for line in raw_output.lines() {
         let trimmed = line.trim();
@@ -880,11 +1435,13 @@ fn parse_gst_inspect_output(
         match trimmed {
             "Factory Details:" => {
                 flush_pad_template(&mut metadata.pad_templates, &mut current_pad);
+                collecting_pad_caps = false;
                 section = "factory";
                 continue;
             }
             "Plugin Details:" => {
                 flush_pad_template(&mut metadata.pad_templates, &mut current_pad);
+                collecting_pad_caps = false;
                 section = "plugin";
                 continue;
             }
@@ -894,6 +1451,7 @@ fn parse_gst_inspect_output(
             }
             "Element Properties:" => {
                 flush_pad_template(&mut metadata.pad_templates, &mut current_pad);
+                collecting_pad_caps = false;
                 section = "properties";
                 continue;
             }
@@ -903,6 +1461,7 @@ fn parse_gst_inspect_output(
             | "Pads:"
             | "Clocking Interaction:" => {
                 flush_pad_template(&mut metadata.pad_templates, &mut current_pad);
+                collecting_pad_caps = false;
                 section = "";
                 continue;
             }
@@ -929,14 +1488,23 @@ fn parse_gst_inspect_output(
             "pads" => {
                 if let Some((direction, name)) = parse_pad_template_heading(trimmed) {
                     flush_pad_template(&mut metadata.pad_templates, &mut current_pad);
+                    collecting_pad_caps = false;
                     current_pad = Some(ElementPadTemplateMetadata {
                         direction,
                         name,
                         presence: None,
+                        caps: Vec::new(),
                     });
                 } else if let Some(value) = parse_gst_field(trimmed, "Availability") {
+                    collecting_pad_caps = false;
                     if let Some(pad) = &mut current_pad {
                         pad.presence = Some(value);
+                    }
+                } else if trimmed == "Capabilities:" {
+                    collecting_pad_caps = true;
+                } else if collecting_pad_caps {
+                    if let Some(pad) = &mut current_pad {
+                        pad.caps.push(trimmed.to_string());
                     }
                 }
             }
@@ -1266,6 +1834,12 @@ Element Signals:
 
         assert_eq!(metadata.plugin_name.as_deref(), Some("videotestsrc"));
         assert_eq!(metadata.pad_templates.len(), 1);
+        assert_eq!(metadata.pad_templates[0].name, "src");
+        assert_eq!(metadata.pad_templates[0].direction, "SRC");
+        assert_eq!(
+            metadata.pad_templates[0].presence.as_deref(),
+            Some("Always")
+        );
         assert_eq!(metadata.properties.len(), 3);
         assert_eq!(metadata.properties[0].name, "name");
         assert_eq!(
@@ -1294,5 +1868,132 @@ Element Signals:
             metadata.properties[2].default_value.as_deref(),
             Some("4096")
         );
+    }
+
+    #[test]
+    fn parse_gst_inspect_output_collects_pad_caps() {
+        let raw_output = r#"
+Factory Details:
+  Long-name                Video converter
+
+Pad Templates:
+  SINK template: 'sink'
+    Availability: Always
+    Capabilities:
+      video/x-raw
+                 format: { ABGR64_LE, BGRA64_LE, AYUV64 }
+                  width: [ 1, 32767 ]
+                 height: [ 1, 32767 ]
+  SRC template: 'src'
+    Availability: Always
+    Capabilities:
+      video/x-raw
+                 format: { ABGR64_LE, BGRA64_LE, AYUV64 }
+
+Element Properties:
+  name                : The name of the object
+"#
+        .to_string();
+
+        let metadata = parse_gst_inspect_output(
+            MetadataAuthority::Local,
+            "videoconvert".to_string(),
+            raw_output,
+        );
+
+        assert_eq!(metadata.pad_templates.len(), 2);
+        assert_eq!(metadata.pad_templates[0].direction, "SINK");
+        assert_eq!(
+            metadata.pad_templates[0].presence.as_deref(),
+            Some("Always")
+        );
+        assert!(metadata.pad_templates[0]
+            .caps
+            .iter()
+            .any(|line| line == "video/x-raw"));
+        assert!(metadata.pad_templates[0]
+            .caps
+            .iter()
+            .any(|line| line.contains("format:")));
+        assert_eq!(metadata.pad_templates[1].direction, "SRC");
+        assert!(metadata.pad_templates[1]
+            .caps
+            .iter()
+            .any(|line| line == "video/x-raw"));
+    }
+
+    #[test]
+    fn playback_detection_accepts_rtsp_with_explicit_port() {
+        let streams = detect_playback_streams(
+            "rtspsrc location=rtsp://192.168.0.10:8554/camera ! rtph264depay ! fakesink",
+        );
+
+        assert_eq!(streams.len(), 1);
+        assert_eq!(streams[0].protocol, PlaybackProtocol::Rtsp);
+        assert_eq!(streams[0].host.as_deref(), Some("192.168.0.10"));
+        assert_eq!(streams[0].port, Some(8554));
+        assert!(streams[0]
+            .playback_pipeline
+            .contains("playbin uri=\"rtsp://192.168.0.10:8554/camera\""));
+    }
+
+    #[test]
+    fn playback_detection_requires_rtsp_port() {
+        let streams = detect_playback_streams(
+            "rtspsrc location=rtsp://192.168.0.10/camera ! rtph264depay ! fakesink",
+        );
+
+        assert!(streams.is_empty());
+    }
+
+    #[test]
+    fn playback_detection_accepts_rtp_udp_caps() {
+        let streams = detect_playback_streams(
+            "udpsrc address=239.0.0.1 port=5004 caps=\"application/x-rtp,media=video,encoding-name=H264,payload=96\" ! rtph264depay ! fakesink",
+        );
+
+        assert_eq!(streams.len(), 1);
+        assert_eq!(streams[0].protocol, PlaybackProtocol::Rtp);
+        assert_eq!(streams[0].media_kind, PlaybackMediaKind::Video);
+        assert_eq!(streams[0].host.as_deref(), Some("239.0.0.1"));
+        assert_eq!(streams[0].port, Some(5004));
+        assert!(streams[0]
+            .playback_pipeline
+            .contains("caps=\"application/x-rtp,media=video"));
+    }
+
+    #[test]
+    fn playback_detection_splits_dual_rtp_streams() {
+        let streams = detect_playback_streams(
+            "udpsrc port=5004 caps=\"application/x-rtp,media=video\" ! fakesink udpsrc port=5006 caps=\"application/x-rtp,media=audio\" ! fakesink",
+        );
+
+        assert_eq!(streams.len(), 2);
+        assert_eq!(streams[0].media_kind, PlaybackMediaKind::Video);
+        assert_eq!(streams[1].media_kind, PlaybackMediaKind::Audio);
+        assert_eq!(streams[0].port, Some(5004));
+        assert_eq!(streams[1].port, Some(5006));
+    }
+
+    #[test]
+    fn playback_detection_blocks_non_streaming_pipeline() {
+        let streams = detect_playback_streams("videotestsrc ! videoconvert ! autovideosink");
+
+        assert!(streams.is_empty());
+        assert!(build_generated_playback_pipeline(&streams).is_none());
+    }
+
+    #[test]
+    fn playback_detection_does_not_preserve_shell_injection_suffix() {
+        let streams = detect_playback_streams(
+            "rtspsrc location=rtsp://127.0.0.1:8554/live;touch /tmp/owned ! fakesink",
+        );
+
+        assert_eq!(streams.len(), 1);
+        assert_eq!(
+            streams[0].uri.as_deref(),
+            Some("rtsp://127.0.0.1:8554/live")
+        );
+        assert!(!streams[0].playback_pipeline.contains("touch"));
     }
 }

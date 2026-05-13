@@ -98,6 +98,7 @@ export type ElementPropertyMetadata = {
 }
 
 export type ElementPadTemplateMetadata = {
+  caps: string[]
   name: string
   direction: string
   presence?: string | null
@@ -127,6 +128,38 @@ export type PipelineSimulationResponse = {
   stderr: string
   diagnostic?: string | null
   command: string
+}
+
+export type PlaybackProtocol = 'rtp' | 'rtsp'
+export type PlaybackMediaKind = 'audio' | 'unknown' | 'video'
+export type PlaybackProcessState = 'error' | 'idle' | 'playing' | 'stopped'
+
+export type PlaybackStream = {
+  id: string
+  protocol: PlaybackProtocol
+  media_kind: PlaybackMediaKind
+  uri?: string | null
+  host?: string | null
+  port?: number | null
+  caps?: string | null
+  source: string
+  playback_pipeline: string
+}
+
+export type PlaybackPrepareResponse = {
+  available: boolean
+  playable: boolean
+  streams: PlaybackStream[]
+  generated_pipeline?: string | null
+  diagnostic?: string | null
+  command: string
+}
+
+export type PlaybackStatusResponse = {
+  state: PlaybackProcessState
+  pid?: number | null
+  command?: string | null
+  message?: string | null
 }
 
 export function isTauriRuntime() {
@@ -171,6 +204,22 @@ export async function inspectLocalElement(factoryName: string) {
 
 export async function simulateLocalPipeline(rawText: string) {
   return invoke<PipelineSimulationResponse>('simulate_local_pipeline', { rawText })
+}
+
+export async function prepareLocalPlayback(rawText: string) {
+  return invoke<PlaybackPrepareResponse>('prepare_local_playback', { rawText })
+}
+
+export async function startLocalPlayback(rawText: string) {
+  return invoke<PlaybackStatusResponse>('start_local_playback', { rawText })
+}
+
+export async function stopLocalPlayback() {
+  return invoke<PlaybackStatusResponse>('stop_local_playback')
+}
+
+export async function getLocalPlaybackStatus() {
+  return invoke<PlaybackStatusResponse>('get_local_playback_status')
 }
 
 export async function probeRemoteTarget(

@@ -249,20 +249,24 @@
 }
 
 .graph-export .icon-button,
+.graph-playback .icon-button,
 .graph-simulation .icon-button {
   width: 34px;
   height: 34px;
   box-shadow: none;
 }
 
+.graph-playback .icon-button.tone-success,
 .graph-simulation .icon-button.tone-success {
   color: #13734a;
 }
 
+.graph-playback .icon-button.tone-error,
 .graph-simulation .icon-button.tone-error {
   color: #a73d3a;
 }
 
+.graph-playback .icon-button.tone-warning,
 .graph-simulation .icon-button.tone-warning {
   color: #9a6a10;
 }
