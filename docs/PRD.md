@@ -28,9 +28,28 @@ actual target device where custom plugins are installed.
 ## Non-Goals
 
 - Building a full pipeline authoring IDE in v1
-- Running or controlling live pipelines in MVP
+- Running or controlling arbitrary live pipelines in the original local analysis
+  MVP
 - Managing multiple targets at once in MVP
 - Guaranteeing runtime correctness from static text alone
+
+## Post-MVP Extension: RTP/RTSP Playback
+
+Sprint 09 introduces a bounded Playback extension that is separate from static
+Simulation.
+
+Playback scope:
+- detect RTP/RTSP streams with explicit IP/Port from the current PLD source
+- prepare a playback window with stream slots and source visibility
+- start and stop a local GStreamer playback process when local GStreamer is
+  available
+- block non-streaming PLD text before execution
+
+Playback non-goals:
+- executing arbitrary PLD text without stream detection
+- fully embedding every native GStreamer video/audio sink inside the WebView
+- remote target process control
+- replacing static parser diagnostics or Simulation
 
 ## Core User Stories
 

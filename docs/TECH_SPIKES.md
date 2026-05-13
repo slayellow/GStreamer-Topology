@@ -152,6 +152,36 @@ Output:
 - performance notes
 - threshold estimates
 
+## Spike 09: In-App RTP/RTSP Playback Preview
+
+Question:
+- What is the safest cross-platform way to show live RTP/RTSP playback inside
+  the Tauri app instead of only controlling an external/native GStreamer sink?
+
+Why:
+- `gst-launch-1.0 ... autovideosink` can run playback, but it does not
+  automatically render into the WebView. A stable in-app preview needs a chosen
+  bridge between GStreamer output and browser-renderable media.
+
+Options to compare:
+- HLS from a local GStreamer pipeline plus local HTTP serving
+- WebRTC from GStreamer into the WebView
+- MJPEG or frame snapshots for low-latency preview
+- Rust GStreamer `appsink` frame delivery into the frontend
+- Native sink window as a temporary fallback outside the WebView
+
+Success criteria:
+- Works on at least Windows and macOS without bundling GStreamer into the app
+- Does not block the UI thread
+- Can be stopped reliably without orphan processes
+- Does not require executing arbitrary PLD text through a shell
+- Preserves clear fallback messaging when local GStreamer is unavailable
+
+Output:
+- preview architecture decision
+- one minimal proof fixture
+- packaging and dependency risk note
+
 ## Recommended Spike Order
 
 1. Plain pipeline text normalization
@@ -162,3 +192,4 @@ Output:
 6. Secure secret storage
 7. Export
 8. Performance
+9. In-app RTP/RTSP playback preview
