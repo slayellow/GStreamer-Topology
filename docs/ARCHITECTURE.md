@@ -180,17 +180,20 @@ Simulation:
 - must not leave long-running media processes behind
 
 Playback:
-- long-running process-control path for RTP/RTSP streams with explicit IP/Port
-- starts only when local GStreamer tooling is available
+- long-running process-control path for RTP streams with explicit IP/Port
+- starts only when the required Local and, in Remote mode, Remote GStreamer
+  tooling is available
+- classifies the source PLD as Sender or Receiver before execution
+- runs the source PLD in the active workspace location: Local or Remote OE-Linux
+- runs the generated opposite-side counterpart and app preview locally
 - uses safe argv-based process execution, never shell string concatenation
 - owns start, status, stop, duplicate-run prevention, and cleanup on close
 
-Initial playback preview should not assume that a native GStreamer sink can be
-embedded into the Tauri WebView. `autovideosink` and platform sinks may open
-native video output surfaces outside the WebView. Full in-app video/audio
-preview should be implemented only after a dedicated spike selects a stable
-cross-platform bridge such as HLS, WebRTC, MJPEG, or a Rust GStreamer appsink
-frame path.
+The current in-app RTP preview uses local JPEG frame capture and frontend image
+polling as a bounded MVP bridge. `autovideosink` and platform sinks may still
+open native video output surfaces outside the WebView when they are present in
+the source PLD. Full audio/video playback should still be treated as a follow-up
+spike if lower latency or audio rendering is required.
 
 ## Security Model
 

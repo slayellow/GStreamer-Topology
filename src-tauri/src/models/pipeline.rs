@@ -225,7 +225,6 @@ pub struct PipelineSimulationResponse {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum PlaybackProtocol {
-    Rtsp,
     Rtp,
 }
 
@@ -238,9 +237,33 @@ pub enum PlaybackMediaKind {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum PlaybackDirection {
+    Receiver,
+    Sender,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum PlaybackSourceRole {
+    Mixed,
+    Receiver,
+    Sender,
+    Unsupported,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum PlaybackLocation {
+    Local,
+    Remote,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct PlaybackStream {
     pub id: String,
     pub protocol: PlaybackProtocol,
+    pub direction: PlaybackDirection,
     pub media_kind: PlaybackMediaKind,
     pub uri: Option<String>,
     pub host: Option<String>,
@@ -254,8 +277,13 @@ pub struct PlaybackStream {
 pub struct PlaybackPrepareResponse {
     pub available: bool,
     pub playable: bool,
+    pub source_role: PlaybackSourceRole,
+    pub source_location: PlaybackLocation,
+    pub counterpart_location: PlaybackLocation,
     pub streams: Vec<PlaybackStream>,
     pub generated_pipeline: Option<String>,
+    pub source_pipeline: Option<String>,
+    pub counterpart_pipeline: Option<String>,
     pub diagnostic: Option<String>,
     pub command: String,
 }
@@ -275,4 +303,13 @@ pub struct PlaybackStatusResponse {
     pub pid: Option<u32>,
     pub command: Option<String>,
     pub message: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct PlaybackFrameResponse {
+    pub stream_id: String,
+    pub available: bool,
+    pub data_url: Option<String>,
+    pub updated_at_millis: Option<u64>,
+    pub diagnostic: Option<String>,
 }

@@ -1,5 +1,6 @@
 import { useEffect, useState, type PointerEvent as ReactPointerEvent } from 'react'
 import {
+  getLocalPlaybackFrame,
   getLocalPlaybackStatus,
   inspectLocalElement,
   inspectRemoteElement,
@@ -10,6 +11,7 @@ import {
   startLocalPlayback,
   stopLocalPlayback,
   type ElementMetadataResponse,
+  type PlaybackFrameResponse,
   type PlaybackPrepareResponse,
   type PlaybackStatusResponse,
   type PipelineSimulationResponse,
@@ -58,6 +60,7 @@ type SimulationUiState = {
 }
 
 type PlaybackUiState = {
+  frames: Record<string, PlaybackFrameResponse>
   isPreparing: boolean
   isStarting: boolean
   isStopping: boolean
@@ -145,6 +148,7 @@ function WorkspaceShell({
   })
   const [isPlaybackOpen, setIsPlaybackOpen] = useState(false)
   const [playbackState, setPlaybackState] = useState<PlaybackUiState>({
+    frames: {},
     isPreparing: false,
     isStarting: false,
     isStopping: false,
@@ -243,13 +247,16 @@ function WorkspaceShell({
         ? '로컬 GStreamer API 확인 중입니다.'
         : '로컬 GStreamer API가 없어 Simulation을 실행할 수 없습니다.'
 
-  const playbackDisabledReason = remoteTarget
-    ? 'Sprint 09 Playback MVP는 Local GStreamer 재생만 지원합니다.'
-    : gstreamerStatus.local.state === 'connected'
-      ? undefined
-      : gstreamerStatus.local.state === 'checking'
+  const playbackDisabledReason =
+    gstreamerStatus.local.state !== 'connected'
+      ? gstreamerStatus.local.state === 'checking'
         ? '로컬 GStreamer API 확인 중입니다.'
-        : '로컬 GStreamer API가 없어 Playback을 실행할 수 없습니다.'
+        : '로컬 GStreamer API가 없어 RTP Playback counterpart를 실행할 수 없습니다.'
+      : remoteTarget && gstreamerStatus.remote.state !== 'connected'
+        ? gstreamerStatus.remote.state === 'checking'
+          ? 'Remote GStreamer API 확인 중입니다.'
+          : 'Remote 연결 또는 GStreamer API 확인 후 Playback을 실행할 수 있습니다.'
+        : undefined
 
   useEffect(() => {
     if (!isPlaybackOpen || !isTauriRuntime() || playbackState.status.state !== 'playing') {
@@ -280,6 +287,52 @@ function WorkspaceShell({
 
     return () => window.clearInterval(timerId)
   }, [isPlaybackOpen, playbackState.status.state])
+
+  useEffect(() => {
+    const streams = playbackState.prepareResult?.streams ?? []
+    const previewStreams = streams.filter(
+      (stream) => stream.media_kind === 'video' || stream.media_kind === 'unknown',
+    )
+    if (
+      !isPlaybackOpen ||
+      !isTauriRuntime() ||
+      playbackState.status.state !== 'playing' ||
+      previewStreams.length === 0
+    ) {
+      return
+    }
+
+    let isCancelled = false
+    const loadFrames = () => {
+      Promise.all(previewStreams.map((stream) => getLocalPlaybackFrame(stream.id)))
+        .then((frames) => {
+          if (isCancelled) {
+            return
+          }
+          setPlaybackState((current) => ({
+            ...current,
+            frames: frames.reduce<Record<string, PlaybackFrameResponse>>(
+              (nextFrames, frame) => ({
+                ...nextFrames,
+                [frame.stream_id]: frame,
+              }),
+              current.frames,
+            ),
+          }))
+        })
+        .catch((error) => {
+          console.error(error)
+        })
+    }
+
+    loadFrames()
+    const timerId = window.setInterval(loadFrames, 120)
+
+    return () => {
+      isCancelled = true
+      window.clearInterval(timerId)
+    }
+  }, [isPlaybackOpen, playbackState.prepareResult, playbackState.status.state])
 
   async function handleRunSimulation() {
     if (simulationDisabledReason) {
@@ -358,22 +411,26 @@ function WorkspaceShell({
     }))
 
     try {
-      const prepareResult = await prepareLocalPlayback(document.normalizedText)
+      const prepareResult = await prepareLocalPlayback(document.normalizedText, remoteTarget)
+      const playableMessage = `재생 가능한 RTP 스트림 ${prepareResult.streams.length}개를 감지했습니다.${
+        prepareResult.diagnostic ? ` ${prepareResult.diagnostic}` : ''
+      }`
       setPlaybackState((current) => ({
         ...current,
+        frames: {},
         isPreparing: false,
         message: prepareResult.playable
-          ? `재생 가능한 스트림 ${prepareResult.streams.length}개를 감지했습니다.`
-          : (prepareResult.diagnostic ?? '재생 가능한 RTP/RTSP 스트림이 없습니다.'),
+          ? playableMessage
+          : (prepareResult.diagnostic ?? '재생 가능한 RTP 스트림이 없습니다.'),
         prepareResult,
         status: prepareResult.playable
           ? {
               state: 'idle',
-              message: `재생 가능한 스트림 ${prepareResult.streams.length}개를 감지했습니다.`,
+              message: playableMessage,
             }
           : {
               state: 'error',
-              message: prepareResult.diagnostic ?? '재생 가능한 RTP/RTSP 스트림이 없습니다.',
+              message: prepareResult.diagnostic ?? '재생 가능한 RTP 스트림이 없습니다.',
             },
       }))
     } catch (error) {
@@ -406,9 +463,10 @@ function WorkspaceShell({
     }))
 
     try {
-      const status = await startLocalPlayback(document.normalizedText)
+      const status = await startLocalPlayback(document.normalizedText, remoteTarget)
       setPlaybackState((current) => ({
         ...current,
+        frames: {},
         isStarting: false,
         message: status.message ?? current.message,
         status,
@@ -686,12 +744,12 @@ function WorkspaceShell({
           <PlaybackPanel
             disabledReason={playbackDisabledReason}
             documentTitle={document.title}
+            frames={playbackState.frames}
             isPreparing={playbackState.isPreparing}
             isStarting={playbackState.isStarting}
             isStopping={playbackState.isStopping}
             message={playbackState.message}
             prepareResult={playbackState.prepareResult}
-            rawText={document.normalizedText}
             status={playbackState.status}
             onClose={handleClosePlayback}
             onPlay={() => void handleStartPlayback()}

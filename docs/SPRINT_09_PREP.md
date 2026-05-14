@@ -92,7 +92,7 @@ Sprint 09 target outcome:
 - Preserve graceful fallback when Local/Remote GStreamer API is unavailable or
   the output cannot be parsed.
 
-### `#45` RTP/RTSP Pipeline Playback control window MVP
+### `#45` RTP Pipeline Playback control window MVP
 
 Priority:
 - `P1`
@@ -101,33 +101,40 @@ User request:
 - Add a Playback icon on the topology screen.
 - Clicking the icon opens a separate playback window or large panel.
 - The window provides `Pipeline 재생 준비`, `재생`, and `중지` controls.
-- Prepare analyzes the current PLD source and only enables playback for RTP or
-  RTSP streams that include IP/Port information.
+- Prepare analyzes the current PLD source and only enables playback for RTP
+  streams that include IP/Port information.
+- Prepare classifies the current PLD as Sender or Receiver.
 - Prepare determines whether the PLD describes one video/audio stream or
   multiple streams, then splits the preview area into matching slots.
-- Play runs a local GStreamer playback pipeline for the detected stream.
+- Play runs the source PLD in the active workspace location. Local mode runs it
+  locally; Remote mode runs it on the OE-Linux target.
+- Play also runs the generated opposite-side RTP counterpart locally.
 - Stop terminates the running playback pipeline.
-- The window shows the original PLD source and the generated playback pipeline.
+- The window shows the original PLD source, generated counterpart pipeline, and
+  full execution plan.
+- Preview cards are small by default and open a larger modal when clicked.
 
 Sprint 09 target outcome:
-- Implement RTP/RTSP endpoint detection for `rtsp://IP:PORT/...` and common
-  `udpsrc ... port=... application/x-rtp` patterns.
+- Implement RTP endpoint detection for common `udpsrc`/`udpsink` patterns with
+  `port=... application/x-rtp`.
 - Add a Playback UI with clear states: `Idle`, `Prepared`, `Playing`,
   `Stopped`, and `Error`.
 - Add safe local process lifecycle commands for prepare, start, stop, and
   status.
+- Add Remote source process lifecycle for active Remote workspaces.
 - Prevent duplicate Play processes and clean up a running process when the
   playback window or app closes.
-- Block playback before execution when local GStreamer is unavailable or no
-  RTP/RTSP endpoint with IP/Port is detected.
+- Block playback before execution when local GStreamer is unavailable, Remote
+  GStreamer is unavailable in Remote mode, or no RTP endpoint with IP/Port is
+  detected.
 - Keep Playback separate from Simulation. Simulation remains a short validation
   path; Playback is a long-running process control path.
 
 Explicitly out of scope for Sprint 09:
 - Perfectly converting every arbitrary PLD into a playable pipeline.
 - Fully embedding all GStreamer video/audio sinks inside the Tauri WebView.
-- Running playback on the remote OE-Linux target.
-- HLS, WebRTC, MJPEG, or Rust GStreamer `appsink` preview architecture unless a
+- RTSP playback or automatic RTSP test-server generation.
+- HLS, WebRTC, or Rust GStreamer `appsink` preview architecture unless a
   separate spike proves the path is safe enough.
 
 Key risk:

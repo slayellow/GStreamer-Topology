@@ -1219,9 +1219,9 @@
 
 .playback-window__surface {
   width: min(1180px, 100%);
-  max-height: min(860px, calc(100svh - 64px));
-  display: grid;
-  grid-template-rows: auto auto auto auto minmax(220px, 1fr) minmax(180px, 0.8fr);
+  height: min(860px, calc(100svh - 64px));
+  display: flex;
+  flex-direction: column;
   gap: 14px;
   overflow: hidden;
   padding: 22px;
@@ -1230,8 +1230,7 @@
 .playback-window__header,
 .playback-window__header-actions,
 .playback-window__summary,
-.playback-window__controls,
-.playback-stream-card__meta {
+.playback-window__controls {
   display: flex;
   align-items: center;
   gap: 10px;
@@ -1302,18 +1301,20 @@
 }
 
 .playback-window__preview {
+  flex: 1;
   min-height: 0;
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
-  gap: 12px;
+  grid-template-columns: repeat(auto-fit, minmax(360px, 1fr));
+  grid-auto-rows: minmax(0, 1fr);
+  align-items: stretch;
+  gap: 16px;
   overflow: auto;
 }
 
 .playback-window__empty,
 .playback-stream-card {
-  min-height: 210px;
+  min-height: 0;
   display: grid;
-  gap: 12px;
   padding: 14px;
   border: 1px solid var(--stroke-soft);
   border-radius: 22px;
@@ -1328,14 +1329,23 @@
 }
 
 .playback-stream-card__screen {
-  min-height: 132px;
+  min-height: 0;
   display: grid;
   place-items: center;
+  overflow: hidden;
   border-radius: 18px;
   background:
     radial-gradient(circle at 30% 20%, rgba(76, 196, 255, 0.18), transparent 30%),
     linear-gradient(135deg, #071426, #13233a);
   color: rgba(255, 255, 255, 0.72);
+}
+
+.playback-stream-card__placeholder {
+  display: grid;
+  gap: 8px;
+  place-items: center;
+  padding: 18px;
+  text-align: center;
 }
 
 .playback-stream-card__screen strong {
@@ -1344,43 +1354,86 @@
   font-size: 1.4rem;
 }
 
-.playback-stream-card code {
+.playback-stream-card__screen small {
+  max-width: 100%;
+  color: rgba(255, 255, 255, 0.62);
+  font-weight: 800;
   overflow-wrap: anywhere;
-  border-radius: 12px;
-  padding: 8px;
-  background: rgba(10, 24, 44, 0.06);
-  color: var(--text-soft);
-  font-size: 0.76rem;
-  line-height: 1.45;
 }
 
-.playback-window__code-grid {
+.playback-stream-card__frame {
+  width: 100%;
+  height: 100%;
   min-height: 0;
+  display: block;
+  object-fit: contain;
+  background: #071426;
+}
+
+.playback-stream-card__frame-button {
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  position: relative;
+  display: block;
+  border: 0;
+  padding: 0;
+  background: transparent;
+  cursor: zoom-in;
+}
+
+.playback-stream-card__frame-button span {
+  position: absolute;
+  right: 10px;
+  bottom: 10px;
+  border-radius: 999px;
+  padding: 6px 10px;
+  background: rgba(7, 20, 38, 0.72);
+  color: #ffffff;
+  font-size: 0.72rem;
+  font-weight: 900;
+}
+
+.playback-preview-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-  gap: 12px;
+  place-items: center;
+  padding: 32px;
+  background: rgba(7, 20, 38, 0.58);
+  backdrop-filter: blur(18px);
 }
 
-.playback-window__code-grid > div {
-  min-height: 0;
+.playback-preview-modal__surface {
+  width: min(1180px, 94vw);
+  max-height: 90vh;
   display: grid;
   grid-template-rows: auto minmax(0, 1fr);
-  gap: 8px;
+  gap: 16px;
+  padding: 20px;
 }
 
-.playback-window__code-grid pre {
-  min-height: 0;
-  overflow: auto;
-  margin: 0;
-  border: 1px solid var(--stroke-soft);
-  border-radius: 16px;
-  padding: 12px;
-  background: rgba(249, 252, 255, 0.8);
-  color: var(--text-soft);
-  font-size: 0.78rem;
-  line-height: 1.45;
-  white-space: pre-wrap;
-  word-break: break-word;
+.playback-preview-modal__surface header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.playback-preview-modal__surface h3 {
+  margin: 4px 0 0;
+  font-family: var(--font-display);
+  font-size: clamp(1.6rem, 2.6vw, 3rem);
+}
+
+.playback-preview-modal__surface img {
+  width: 100%;
+  max-height: 72vh;
+  object-fit: contain;
+  border-radius: 24px;
+  background: #071426;
+  box-shadow: 0 24px 70px rgba(7, 20, 38, 0.24);
 }
 
 .inspector-property-list li,

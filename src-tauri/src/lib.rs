@@ -18,6 +18,7 @@ pub fn run() {
             commands::pipeline::start_local_playback,
             commands::pipeline::stop_local_playback,
             commands::pipeline::get_local_playback_status,
+            commands::pipeline::get_local_playback_frame,
             commands::pipeline::load_remote_pipeline,
             commands::pipeline::save_export_file,
             commands::pipeline::save_export_file_to_downloads,

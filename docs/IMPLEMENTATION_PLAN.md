@@ -88,26 +88,28 @@ Deliverables:
 - host-key behavior is explicit
 - packaging notes exist for all local app platforms
 
-### Slice 6: RTP/RTSP Playback MVP
+### Slice 6: RTP Playback MVP
 
 Goals:
 - add a Playback entry point that is distinct from Simulation
-- detect RTSP URLs and RTP/UDP endpoints with explicit IP/Port
+- detect RTP/UDP endpoints with explicit IP/Port
+- classify the PLD as Sender or Receiver
+- generate and run the opposite-side RTP counterpart pipeline automatically
 - prepare preview slots based on detected stream count
-- start and stop one local GStreamer playback process safely
+- start and stop local and remote GStreamer playback processes safely
 - block unsupported or non-streaming PLD text before execution
 
 Deliverables:
 - Playback window or large panel
 - Prepare, Play, Stop, and status states
-- original PLD source and generated playback pipeline display
+- original PLD source, generated counterpart pipeline, and execution plan display
 - safe process lifecycle management without shell execution
 - clear unavailable states when local GStreamer is missing
+- small RTP preview cards with click-to-expand modal preview
 
 Follow-up spike:
-- decide how to render live media inside the Tauri WebView across Windows,
-  Linux, and macOS. Candidate paths include HLS, WebRTC, MJPEG, and Rust
-  GStreamer appsink frame delivery.
+- decide whether the JPEG frame bridge should be replaced by HLS, WebRTC,
+  MJPEG streaming, or Rust GStreamer appsink frame delivery.
 
 ## Priority Backlog
 

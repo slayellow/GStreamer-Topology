@@ -5,7 +5,8 @@ pub use pipeline::{
     ElementPropertyMetadata, GStreamerProbeResponse, MetadataAuthority, NormalizationResult,
     ParseDiagnostic, PipelineDocument, PipelineEdge, PipelineGraph, PipelineNode, PipelineNodeKind,
     PipelinePort, PipelinePortKind, PipelineProperty, PipelineSimulationResponse,
-    PlaybackMediaKind, PlaybackPrepareResponse, PlaybackProcessState, PlaybackProtocol,
+    PlaybackDirection, PlaybackFrameResponse, PlaybackLocation, PlaybackMediaKind,
+    PlaybackPrepareResponse, PlaybackProcessState, PlaybackProtocol, PlaybackSourceRole,
     PlaybackStatusResponse, PlaybackStream, RemoteProbeResponse, RemoteTargetRequest, SourceKind,
     SourceSpan,
 };
