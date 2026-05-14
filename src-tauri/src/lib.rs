@@ -4,15 +4,21 @@ pub mod parser;
 
 pub fn run() {
     tauri::Builder::default()
+        .manage(commands::pipeline::PlaybackState::default())
         .invoke_handler(tauri::generate_handler![
             commands::pipeline::load_local_pipeline_file,
             commands::pipeline::inspect_local_element,
             commands::pipeline::inspect_remote_element,
             commands::pipeline::parse_pipeline_text,
+            commands::pipeline::prepare_local_playback,
             commands::pipeline::probe_local_gstreamer,
             commands::pipeline::probe_remote_target,
             commands::pipeline::simulate_local_pipeline,
             commands::pipeline::simulate_remote_pipeline,
+            commands::pipeline::start_local_playback,
+            commands::pipeline::stop_local_playback,
+            commands::pipeline::get_local_playback_status,
+            commands::pipeline::get_local_playback_frame,
             commands::pipeline::load_remote_pipeline,
             commands::pipeline::save_export_file,
             commands::pipeline::save_export_file_to_downloads,

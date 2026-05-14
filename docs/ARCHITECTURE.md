@@ -170,6 +170,31 @@ It should not be the main in-app canvas renderer.
 
 Add a target-side helper that emits stable JSON if CLI parsing becomes brittle.
 
+## Playback Extension Strategy
+
+Playback is separate from Simulation.
+
+Simulation:
+- short-lived validation path
+- reports whether a pipeline can be parsed or launched enough to fail fast
+- must not leave long-running media processes behind
+
+Playback:
+- long-running process-control path for RTP streams with explicit IP/Port
+- starts only when the required Local and, in Remote mode, Remote GStreamer
+  tooling is available
+- classifies the source PLD as Sender or Receiver before execution
+- runs the source PLD in the active workspace location: Local or Remote OE-Linux
+- runs the generated opposite-side counterpart and app preview locally
+- uses safe argv-based process execution, never shell string concatenation
+- owns start, status, stop, duplicate-run prevention, and cleanup on close
+
+The current in-app RTP preview uses local JPEG frame capture and frontend image
+polling as a bounded MVP bridge. `autovideosink` and platform sinks may still
+open native video output surfaces outside the WebView when they are present in
+the source PLD. Full audio/video playback should still be treated as a follow-up
+spike if lower latency or audio rendering is required.
+
 ## Security Model
 
 - Read-only remote operations in MVP
@@ -178,6 +203,8 @@ Add a target-side helper that emits stable JSON if CLI parsing becomes brittle.
 - Keep target metadata separate from secrets
 - No remote shell string building from unsafe user text when avoidable
 - Enforce output size and timeout limits on remote commands
+- Do not execute PLD source through a shell for Playback; use argv-based process
+  spawning and block unsupported non-streaming inputs before execution.
 
 ## Packaging Plan
 

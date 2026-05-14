@@ -1,5 +1,6 @@
 type IconName =
   | 'arrowLeft'
+  | 'broadcast'
   | 'close'
   | 'diagnostics'
   | 'download'
@@ -34,6 +35,16 @@ function Icon({ name }: IconProps) {
         <svg {...commonProps}>
           <path d="M19 12H5" />
           <path d="m12 19-7-7 7-7" />
+        </svg>
+      )
+    case 'broadcast':
+      return (
+        <svg {...commonProps}>
+          <path d="M8 5.5a6 6 0 0 0 0 13" />
+          <path d="M16 5.5a6 6 0 0 1 0 13" />
+          <path d="M10.5 8.5a3 3 0 0 0 0 7" />
+          <path d="M13.5 8.5a3 3 0 0 1 0 7" />
+          <path d="M12 10.5v3l2.5-1.5Z" />
         </svg>
       )
     case 'close':

@@ -96,6 +96,23 @@ function metadataPropertySummary(property: ElementMetadataResponse['properties']
   ].filter((value): value is string => Boolean(value))
 }
 
+function renderPadTemplate(pad: ElementMetadataResponse['pad_templates'][number]) {
+  return (
+    <li className="metadata-pad-card" key={`${pad.direction}-${pad.name}`}>
+      <div className="metadata-pad-card__header">
+        <span className="card-chip">{pad.direction}</span>
+        <strong>{pad.name}</strong>
+        {pad.presence ? <span className="card-chip muted-chip">{pad.presence}</span> : null}
+      </div>
+      {pad.caps.length ? (
+        <pre>{pad.caps.join('\n')}</pre>
+      ) : (
+        <small>상세 Caps 정보를 가져오지 못했습니다.</small>
+      )}
+    </li>
+  )
+}
+
 function InspectorPanel({ document, metadata, selectedNode }: InspectorPanelProps) {
   if (!selectedNode) {
     return (
@@ -205,13 +222,8 @@ function InspectorPanel({ document, metadata, selectedNode }: InspectorPanelProp
             {metadata.data.pad_templates.length ? (
               <div className="metadata-subsection">
                 <span className="field-label">Pad templates</span>
-                <ul className="metadata-pill-list">
-                  {metadata.data.pad_templates.slice(0, 6).map((pad) => (
-                    <li key={`${pad.direction}-${pad.name}`}>
-                      {pad.direction} · {pad.name}
-                      {pad.presence ? ` · ${pad.presence}` : ''}
-                    </li>
-                  ))}
+                <ul className="metadata-pad-list">
+                  {metadata.data.pad_templates.map(renderPadTemplate)}
                 </ul>
               </div>
             ) : null}

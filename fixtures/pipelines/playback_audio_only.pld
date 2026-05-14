@@ -1,0 +1,1 @@
+udpsrc port=5010 caps="application/x-rtp,media=audio,encoding-name=OPUS,payload=111,clock-rate=48000" ! rtpopusdepay ! opusdec ! autoaudiosink

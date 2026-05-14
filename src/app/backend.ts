@@ -98,6 +98,7 @@ export type ElementPropertyMetadata = {
 }
 
 export type ElementPadTemplateMetadata = {
+  caps: string[]
   name: string
   direction: string
   presence?: string | null
@@ -127,6 +128,55 @@ export type PipelineSimulationResponse = {
   stderr: string
   diagnostic?: string | null
   command: string
+}
+
+export type PlaybackProtocol = 'rtp'
+export type PlaybackMediaKind = 'audio' | 'unknown' | 'video'
+export type PlaybackProcessState = 'error' | 'idle' | 'playing' | 'stopped'
+export type PlaybackDirection = 'receiver' | 'sender'
+export type PlaybackSourceRole = 'mixed' | 'receiver' | 'sender' | 'unsupported'
+export type PlaybackLocation = 'local' | 'remote'
+
+export type PlaybackStream = {
+  id: string
+  protocol: PlaybackProtocol
+  direction: PlaybackDirection
+  media_kind: PlaybackMediaKind
+  uri?: string | null
+  host?: string | null
+  port?: number | null
+  caps?: string | null
+  source: string
+  playback_pipeline: string
+}
+
+export type PlaybackPrepareResponse = {
+  available: boolean
+  playable: boolean
+  source_role: PlaybackSourceRole
+  source_location: PlaybackLocation
+  counterpart_location: PlaybackLocation
+  streams: PlaybackStream[]
+  generated_pipeline?: string | null
+  source_pipeline?: string | null
+  counterpart_pipeline?: string | null
+  diagnostic?: string | null
+  command: string
+}
+
+export type PlaybackStatusResponse = {
+  state: PlaybackProcessState
+  pid?: number | null
+  command?: string | null
+  message?: string | null
+}
+
+export type PlaybackFrameResponse = {
+  stream_id: string
+  available: boolean
+  data_url?: string | null
+  updated_at_millis?: number | null
+  diagnostic?: string | null
 }
 
 export function isTauriRuntime() {
@@ -171,6 +221,42 @@ export async function inspectLocalElement(factoryName: string) {
 
 export async function simulateLocalPipeline(rawText: string) {
   return invoke<PipelineSimulationResponse>('simulate_local_pipeline', { rawText })
+}
+
+export async function prepareLocalPlayback(rawText: string, request?: RemoteTargetInput | null) {
+  return invoke<PlaybackPrepareResponse>('prepare_local_playback', {
+    rawText,
+    request: request
+      ? {
+          ...request,
+          port: Number(request.port || 22),
+        }
+      : null,
+  })
+}
+
+export async function startLocalPlayback(rawText: string, request?: RemoteTargetInput | null) {
+  return invoke<PlaybackStatusResponse>('start_local_playback', {
+    rawText,
+    request: request
+      ? {
+          ...request,
+          port: Number(request.port || 22),
+        }
+      : null,
+  })
+}
+
+export async function stopLocalPlayback() {
+  return invoke<PlaybackStatusResponse>('stop_local_playback')
+}
+
+export async function getLocalPlaybackStatus() {
+  return invoke<PlaybackStatusResponse>('get_local_playback_status')
+}
+
+export async function getLocalPlaybackFrame(streamId: string) {
+  return invoke<PlaybackFrameResponse>('get_local_playback_frame', { streamId })
 }
 
 export async function probeRemoteTarget(

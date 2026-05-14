@@ -1,0 +1,1 @@
+udpsrc address=239.10.0.1 port=5004 caps="application/x-rtp,media=video,encoding-name=H264,payload=96,clock-rate=90000" ! rtph264depay ! queue ! avdec_h264 ! autovideosink udpsrc address=239.10.0.2 port=5006 caps="application/x-rtp,media=video,encoding-name=H264,payload=97,clock-rate=90000" ! rtph264depay ! queue ! avdec_h264 ! autovideosink

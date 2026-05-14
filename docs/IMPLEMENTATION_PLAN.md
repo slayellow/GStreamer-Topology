@@ -88,6 +88,29 @@ Deliverables:
 - host-key behavior is explicit
 - packaging notes exist for all local app platforms
 
+### Slice 6: RTP Playback MVP
+
+Goals:
+- add a Playback entry point that is distinct from Simulation
+- detect RTP/UDP endpoints with explicit IP/Port
+- classify the PLD as Sender or Receiver
+- generate and run the opposite-side RTP counterpart pipeline automatically
+- prepare preview slots based on detected stream count
+- start and stop local and remote GStreamer playback processes safely
+- block unsupported or non-streaming PLD text before execution
+
+Deliverables:
+- Playback window or large panel
+- Prepare, Play, Stop, and status states
+- original PLD source, generated counterpart pipeline, and execution plan display
+- safe process lifecycle management without shell execution
+- clear unavailable states when local GStreamer is missing
+- small RTP preview cards with click-to-expand modal preview
+
+Follow-up spike:
+- decide whether the JPEG frame bridge should be replaced by HLS, WebRTC,
+  MJPEG streaming, or Rust GStreamer appsink frame delivery.
+
 ## Priority Backlog
 
 ### P0
@@ -101,6 +124,7 @@ Deliverables:
 ### P1
 
 - Export `PNG` and `JPG`, then `PDF`
+- RTP/RTSP Playback MVP with safe local process control
 - Recent files and recent targets
 - Branch collapse and expand
 - Missing plugin and unresolved reference warnings

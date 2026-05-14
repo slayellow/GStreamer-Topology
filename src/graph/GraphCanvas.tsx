@@ -32,6 +32,7 @@ import type { PipelineDocumentViewModel } from './types.ts'
 type GraphCanvasProps = {
   document: PipelineDocumentViewModel
   focusRequestRevision?: number
+  playback?: GraphPlaybackControl
   selectedNodeId: string | null
   simulation?: GraphSimulationControl
   onSelectNode: (nodeId: string | null) => void
@@ -57,6 +58,13 @@ type GraphSimulationControl = {
   isRunning: boolean
   message?: string
   onRun: () => void
+  tone?: 'error' | 'info' | 'success' | 'warning'
+}
+
+type GraphPlaybackControl = {
+  active?: boolean
+  disabledReason?: string
+  onOpen: () => void
   tone?: 'error' | 'info' | 'success' | 'warning'
 }
 
@@ -373,6 +381,7 @@ async function captureFullTopologyImage({
 function GraphCanvas({
   document,
   focusRequestRevision = 0,
+  playback,
   selectedNodeId,
   simulation,
   onSelectNode,
@@ -738,6 +747,18 @@ function GraphCanvas({
                   icon="play"
                   label={simulation.disabledReason ?? 'Pipeline Simulation 실행'}
                   onClick={simulation.onRun}
+                />
+              </div>
+            ) : null}
+            {playback ? (
+              <div className="graph-playback" data-export-exclude="true">
+                <IconButton
+                  active={playback.active}
+                  className={playback.tone ? `tone-${playback.tone}` : undefined}
+                  disabled={Boolean(playback.disabledReason)}
+                  icon="broadcast"
+                  label={playback.disabledReason ?? 'Pipeline Playback 열기'}
+                  onClick={playback.onOpen}
                 />
               </div>
             ) : null}
