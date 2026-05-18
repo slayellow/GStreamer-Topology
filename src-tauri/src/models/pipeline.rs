@@ -310,6 +310,7 @@ pub struct PlaybackFrameResponse {
     pub stream_id: String,
     pub available: bool,
     pub data_url: Option<String>,
+    pub stream_url: Option<String>,
     pub updated_at_millis: Option<u64>,
     pub diagnostic: Option<String>,
 }

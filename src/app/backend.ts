@@ -175,6 +175,7 @@ export type PlaybackFrameResponse = {
   stream_id: string
   available: boolean
   data_url?: string | null
+  stream_url?: string | null
   updated_at_millis?: number | null
   diagnostic?: string | null
 }

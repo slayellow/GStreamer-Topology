@@ -144,3 +144,43 @@ Ready state:
 - Issues #48 and #46 are in both the parent board and Sprint 10 board as `Todo`.
 - Sprint labels and role labels are applied.
 - Local branch `sprint_10` is created from updated `main`.
+
+## Implementation Update - 2026-05-18
+
+Status:
+- Issues #48 and #46 were moved to `In Progress` on both the parent board and
+  the Sprint 10 board.
+- Atlas, Forge, Loom, and Beacon review outputs were summarized as Korean issue
+  comments.
+
+Implemented for #48:
+- Sender RTP detection now infers caps from payloader elements such as
+  `rtph264pay pt=96` when explicit `application/x-rtp` caps are missing.
+- H264/H265 preview chains use `decodebin` after depay/parse instead of a fixed
+  `avdec_h264` or `avdec_h265` element.
+- Local playback process stdout/stderr is written to a temporary log so early
+  plugin/decoder failures can be surfaced in the Playback status message.
+
+Implemented for #46:
+- App preview now exposes a local MJPEG HTTP stream URL per preview stream and
+  renders that URL in the WebView.
+- The existing GStreamer JPEG frame generation path remains in place, but the
+  frontend no longer needs to refresh the visible image via fast base64 polling
+  once a stream URL is available.
+- Preview frame generation was raised from `12fps / jpeg quality 75 / max-files
+  16` to `24fps / jpeg quality 82 / max-files 32`.
+- Playback cards now show `LIVE`, `WAITING`, or `READY` badges plus basic stream
+  metadata.
+
+Internal verification:
+- `git diff --check`
+- `npm run lint`
+- `npm run build`
+- `cd src-tauri && cargo test` (`34 passed`)
+
+Still unverified:
+- Actual Windows 11 + OE-Linux H264 RTP preview behavior.
+- Whether the user's Windows environment allows the local `127.0.0.1` MJPEG
+  preview URL without firewall/security interference.
+- Visual smoothness of the MJPEG bridge under real one-stream and two-stream
+  playback.
