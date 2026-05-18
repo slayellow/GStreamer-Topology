@@ -1,11 +1,14 @@
 use std::env;
 use std::fs;
-use std::io::Read;
-use std::net::TcpStream;
+use std::io::{Read, Write};
+use std::net::{TcpListener, TcpStream};
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Output, Stdio};
-use std::sync::Mutex;
-use std::thread;
+use std::sync::{
+    atomic::{AtomicBool, Ordering},
+    Arc, Mutex,
+};
+use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use base64::{engine::general_purpose, Engine as _};
@@ -31,12 +34,14 @@ struct PlaybackSession {
     frame_sources: Vec<PlaybackFrameSource>,
     pid: u32,
     preview_dir: Option<PathBuf>,
+    preview_server: Option<MjpegPreviewServer>,
     processes: Vec<PlaybackProcessHandle>,
 }
 
 struct PlaybackProcess {
     child: Child,
     command: String,
+    log_path: Option<PathBuf>,
     pid: u32,
 }
 
@@ -52,9 +57,17 @@ enum PlaybackProcessHandle {
     Remote(RemotePlaybackProcess),
 }
 
+#[derive(Clone)]
 struct PlaybackFrameSource {
     folder: PathBuf,
     stream_id: String,
+    stream_url: Option<String>,
+}
+
+struct MjpegPreviewServer {
+    base_url: String,
+    handle: Option<JoinHandle<()>>,
+    stop: Arc<AtomicBool>,
 }
 
 impl Drop for PlaybackSession {
@@ -62,8 +75,20 @@ impl Drop for PlaybackSession {
         for process in &mut self.processes {
             let _ = kill_playback_process(process);
         }
+        if let Some(server) = self.preview_server.take() {
+            drop(server);
+        }
         if let Some(preview_dir) = &self.preview_dir {
             let _ = fs::remove_dir_all(preview_dir);
+        }
+    }
+}
+
+impl Drop for MjpegPreviewServer {
+    fn drop(&mut self) {
+        self.stop.store(true, Ordering::Relaxed);
+        if let Some(handle) = self.handle.take() {
+            let _ = handle.join();
         }
     }
 }
@@ -1013,6 +1038,17 @@ pub fn start_local_playback(
         };
     }
     let frame_sources = playback_frame_sources(&plan.streams, &preview_dir);
+    let (frame_sources, mut preview_server) = if frame_sources.is_empty() {
+        (frame_sources, None)
+    } else {
+        match start_mjpeg_preview_server(&frame_sources) {
+            Ok(server) => {
+                let frame_sources = with_mjpeg_stream_urls(&frame_sources, &server.base_url);
+                (frame_sources, Some(server))
+            }
+            Err(_) => (frame_sources, None),
+        }
+    };
     let command_text = plan
         .launch_steps
         .iter()
@@ -1051,6 +1087,9 @@ pub fn start_local_playback(
                 for process in &mut processes {
                     let _ = kill_playback_process(process);
                 }
+                if let Some(server) = preview_server.take() {
+                    drop(server);
+                }
                 let _ = fs::remove_dir_all(&preview_dir);
                 return PlaybackStatusResponse {
                     state: PlaybackProcessState::Error,
@@ -1069,6 +1108,7 @@ pub fn start_local_playback(
             frame_sources,
             pid,
             preview_dir: Some(preview_dir),
+            preview_server,
             processes,
         });
         PlaybackStatusResponse {
@@ -1078,6 +1118,9 @@ pub fn start_local_playback(
             message: Some("Playback Pipeline을 실행했습니다.".to_string()),
         }
     } else {
+        if let Some(server) = preview_server.take() {
+            drop(server);
+        }
         let _ = fs::remove_dir_all(preview_dir);
         PlaybackStatusResponse {
             state: PlaybackProcessState::Error,
@@ -1176,12 +1219,24 @@ fn spawn_local_playback_process(
     pipeline: &str,
 ) -> Result<PlaybackProcessHandle, String> {
     let args = gst_launch_args(pipeline)?;
+    let log_path = env::temp_dir().join(format!(
+        "gst-topology-playback-local-{}-{}.log",
+        std::process::id(),
+        chrono_like_timestamp()
+    ));
+    let log_file = fs::File::create(&log_path).ok();
     let mut command = gstreamer_command(command_path);
     command
         .args(&args)
         .stdin(Stdio::null())
-        .stdout(Stdio::null())
-        .stderr(Stdio::null());
+        .stdout(
+            log_file
+                .as_ref()
+                .and_then(|file| file.try_clone().ok())
+                .map(Stdio::from)
+                .unwrap_or_else(Stdio::null),
+        )
+        .stderr(log_file.map(Stdio::from).unwrap_or_else(Stdio::null));
     let child = command
         .spawn()
         .map_err(|error| format!("Local gst-launch 실행 실패: {error}"))?;
@@ -1190,6 +1245,7 @@ fn spawn_local_playback_process(
     Ok(PlaybackProcessHandle::Local(PlaybackProcess {
         child,
         command: format!("{} {}", command_path.display(), args.join(" ")),
+        log_path: Some(log_path),
         pid,
     }))
 }
@@ -1273,14 +1329,22 @@ fn playback_process_status(process: &mut PlaybackProcessHandle) -> Result<Option
     match process {
         PlaybackProcessHandle::Local(process) => match process.child.try_wait() {
             Ok(None) => Ok(None),
-            Ok(Some(status)) => Ok(Some(format!(
-                "Local PID {} 종료{}",
-                process.pid,
-                status
-                    .code()
-                    .map(|code| format!(" (exit {code})"))
-                    .unwrap_or_default()
-            ))),
+            Ok(Some(status)) => {
+                let log_tail = read_local_playback_log(process).unwrap_or_default();
+                Ok(Some(format!(
+                    "Local PID {} 종료{}{}",
+                    process.pid,
+                    status
+                        .code()
+                        .map(|code| format!(" (exit {code})"))
+                        .unwrap_or_default(),
+                    if log_tail.trim().is_empty() {
+                        String::new()
+                    } else {
+                        format!(": {}", summarize_playback_failure_hint(log_tail.trim()))
+                    }
+                )))
+            }
             Err(error) => Err(error.to_string()),
         },
         PlaybackProcessHandle::Remote(process) => {
@@ -1297,7 +1361,7 @@ fn playback_process_status(process: &mut PlaybackProcessHandle) -> Result<Option
                     if log_tail.trim().is_empty() {
                         String::new()
                     } else {
-                        format!(": {}", log_tail.trim())
+                        format!(": {}", summarize_playback_failure_hint(log_tail.trim()))
                     }
                 )))
             }
@@ -1308,10 +1372,14 @@ fn playback_process_status(process: &mut PlaybackProcessHandle) -> Result<Option
 fn kill_playback_process(process: &mut PlaybackProcessHandle) -> Result<(), String> {
     match process {
         PlaybackProcessHandle::Local(process) => match process.child.try_wait() {
-            Ok(Some(_)) => Ok(()),
+            Ok(Some(_)) => {
+                remove_local_playback_log(process);
+                Ok(())
+            }
             Ok(None) => {
                 process.child.kill().map_err(|error| error.to_string())?;
                 process.child.wait().map_err(|error| error.to_string())?;
+                remove_local_playback_log(process);
                 Ok(())
             }
             Err(error) => Err(error.to_string()),
@@ -1331,6 +1399,55 @@ fn kill_playback_process(process: &mut PlaybackProcessHandle) -> Result<(), Stri
                 Err(output.stderr.if_empty("Remote Playback process 종료 실패."))
             }
         }
+    }
+}
+
+fn read_local_playback_log(process: &PlaybackProcess) -> Result<String, String> {
+    let Some(log_path) = &process.log_path else {
+        return Ok(String::new());
+    };
+    let text = fs::read_to_string(log_path).map_err(|error| error.to_string())?;
+    let mut lines = text
+        .lines()
+        .rev()
+        .take(20)
+        .map(str::to_string)
+        .collect::<Vec<_>>();
+    lines.reverse();
+
+    Ok(lines.join("\n"))
+}
+
+fn summarize_playback_failure_hint(log_tail: &str) -> String {
+    let lower = log_tail.to_ascii_lowercase();
+    let compact = log_tail
+        .lines()
+        .map(str::trim)
+        .filter(|line| !line.is_empty())
+        .collect::<Vec<_>>()
+        .join(" | ");
+    let compact = if compact.len() > 700 {
+        format!("{}...", &compact[..700])
+    } else {
+        compact
+    };
+
+    if lower.contains("no element")
+        || lower.contains("missing plugin")
+        || lower.contains("could not link")
+        || lower.contains("erroneous pipeline")
+    {
+        return format!(
+            "로컬 GStreamer plugin/decoder 문제 가능성이 있습니다. H264 Preview는 rtph264depay, h264parse, decodebin이 사용할 H264 decoder, jpegenc가 필요합니다. 원본 로그: {compact}"
+        );
+    }
+
+    compact
+}
+
+fn remove_local_playback_log(process: &PlaybackProcess) {
+    if let Some(log_path) = &process.log_path {
+        let _ = fs::remove_file(log_path);
     }
 }
 
@@ -1449,6 +1566,7 @@ pub fn get_local_playback_frame(
                 stream_id,
                 available: false,
                 data_url: None,
+                stream_url: None,
                 updated_at_millis: None,
                 diagnostic: Some("Playback 상태 잠금을 가져오지 못했습니다.".to_string()),
             };
@@ -1460,6 +1578,7 @@ pub fn get_local_playback_frame(
             stream_id,
             available: false,
             data_url: None,
+            stream_url: None,
             updated_at_millis: None,
             diagnostic: Some("Playback Pipeline이 실행 중이 아닙니다.".to_string()),
         };
@@ -1474,6 +1593,7 @@ pub fn get_local_playback_frame(
             stream_id,
             available: false,
             data_url: None,
+            stream_url: None,
             updated_at_millis: None,
             diagnostic: Some("이 스트림에는 App preview frame source가 없습니다.".to_string()),
         };
@@ -1546,10 +1666,10 @@ fn rtp_playback_chain(
         return "rtpjpegdepay ! jpegdec ! videoconvert ! autovideosink".to_string();
     }
     if rtp_caps_has_encoding(&caps_lower, "h264") {
-        return "rtph264depay ! h264parse ! avdec_h264 ! videoconvert ! autovideosink".to_string();
+        return "rtph264depay ! h264parse ! decodebin ! videoconvert ! autovideosink".to_string();
     }
     if rtp_caps_has_encoding(&caps_lower, "h265") || rtp_caps_has_encoding(&caps_lower, "hevc") {
-        return "rtph265depay ! h265parse ! avdec_h265 ! videoconvert ! autovideosink".to_string();
+        return "rtph265depay ! h265parse ! decodebin ! videoconvert ! autovideosink".to_string();
     }
     if rtp_caps_has_encoding(&caps_lower, "opus") {
         return "rtpopusdepay ! opusdec ! audioconvert ! audioresample ! autoaudiosink".to_string();
@@ -1624,22 +1744,22 @@ fn rtp_frame_preview_chain(
 
     if rtp_caps_has_encoding(&caps_lower, "raw") {
         return format!(
-            "rtpvrawdepay ! videoconvert ! videorate ! video/x-raw,framerate=12/1 ! jpegenc quality=75 ! {sink_chain}"
+            "rtpvrawdepay ! videoconvert ! videorate ! video/x-raw,framerate=24/1 ! jpegenc quality=82 ! {sink_chain}"
         );
     }
     if rtp_caps_has_encoding(&caps_lower, "jpeg") {
         return format!(
-            "rtpjpegdepay ! jpegdec ! videoconvert ! videorate ! video/x-raw,framerate=12/1 ! jpegenc quality=75 ! {sink_chain}"
+            "rtpjpegdepay ! jpegdec ! videoconvert ! videorate ! video/x-raw,framerate=24/1 ! jpegenc quality=82 ! {sink_chain}"
         );
     }
     if rtp_caps_has_encoding(&caps_lower, "h264") {
         return format!(
-            "rtph264depay ! h264parse ! avdec_h264 ! videoconvert ! videorate ! video/x-raw,framerate=12/1 ! jpegenc quality=75 ! {sink_chain}"
+            "rtph264depay ! h264parse ! decodebin ! videoconvert ! videorate ! video/x-raw,framerate=24/1 ! jpegenc quality=82 ! {sink_chain}"
         );
     }
     if rtp_caps_has_encoding(&caps_lower, "h265") || rtp_caps_has_encoding(&caps_lower, "hevc") {
         return format!(
-            "rtph265depay ! h265parse ! avdec_h265 ! videoconvert ! videorate ! video/x-raw,framerate=12/1 ! jpegenc quality=75 ! {sink_chain}"
+            "rtph265depay ! h265parse ! decodebin ! videoconvert ! videorate ! video/x-raw,framerate=24/1 ! jpegenc quality=82 ! {sink_chain}"
         );
     }
 
@@ -1647,7 +1767,7 @@ fn rtp_frame_preview_chain(
         PlaybackMediaKind::Audio => "decodebin ! autoaudiosink".to_string(),
         PlaybackMediaKind::Unknown | PlaybackMediaKind::Video => {
             format!(
-                "decodebin ! videoconvert ! videorate ! video/x-raw,framerate=12/1 ! jpegenc quality=75 ! {sink_chain}"
+                "decodebin ! videoconvert ! videorate ! video/x-raw,framerate=24/1 ! jpegenc quality=82 ! {sink_chain}"
             )
         }
     }
@@ -1660,7 +1780,7 @@ fn rtp_caps_has_encoding(caps_lower: &str, encoding: &str) -> bool {
 
 fn frame_sink_chain(frame_location: &str) -> String {
     format!(
-        "multifilesink location=\"{}\" max-files=16",
+        "multifilesink location=\"{}\" max-files=32",
         escape_gst_value(frame_location)
     )
 }
@@ -1855,25 +1975,134 @@ fn playback_frame_sources(
         .map(|stream| PlaybackFrameSource {
             folder: preview_dir.to_path_buf(),
             stream_id: stream.id.clone(),
+            stream_url: None,
         })
         .collect()
 }
 
-fn latest_playback_frame(frame_source: &PlaybackFrameSource) -> PlaybackFrameResponse {
-    let prefix = safe_stream_file_prefix(&frame_source.stream_id);
-    let entries = match fs::read_dir(&frame_source.folder) {
-        Ok(entries) => entries,
-        Err(error) => {
-            return PlaybackFrameResponse {
-                stream_id: frame_source.stream_id.clone(),
-                available: false,
-                data_url: None,
-                updated_at_millis: None,
-                diagnostic: Some(format!("Preview frame 폴더를 읽지 못했습니다: {error}")),
-            };
+fn with_mjpeg_stream_urls(
+    frame_sources: &[PlaybackFrameSource],
+    base_url: &str,
+) -> Vec<PlaybackFrameSource> {
+    frame_sources
+        .iter()
+        .map(|source| PlaybackFrameSource {
+            folder: source.folder.clone(),
+            stream_id: source.stream_id.clone(),
+            stream_url: Some(format!("{base_url}/{}.mjpeg", source.stream_id)),
+        })
+        .collect()
+}
+
+fn start_mjpeg_preview_server(
+    frame_sources: &[PlaybackFrameSource],
+) -> Result<MjpegPreviewServer, String> {
+    let listener = TcpListener::bind(("127.0.0.1", 0))
+        .map_err(|error| format!("Preview MJPEG server bind 실패: {error}"))?;
+    listener
+        .set_nonblocking(true)
+        .map_err(|error| format!("Preview MJPEG server nonblocking 설정 실패: {error}"))?;
+    let port = listener
+        .local_addr()
+        .map_err(|error| format!("Preview MJPEG server 주소 확인 실패: {error}"))?
+        .port();
+    let stop = Arc::new(AtomicBool::new(false));
+    let thread_stop = Arc::clone(&stop);
+    let sources = frame_sources.to_vec();
+    let handle = thread::spawn(move || {
+        while !thread_stop.load(Ordering::Relaxed) {
+            match listener.accept() {
+                Ok((stream, _)) => {
+                    let client_sources = sources.clone();
+                    let client_stop = Arc::clone(&thread_stop);
+                    thread::spawn(move || {
+                        serve_mjpeg_client(stream, client_sources, client_stop);
+                    });
+                }
+                Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
+                    thread::sleep(Duration::from_millis(25));
+                }
+                Err(_) => break,
+            }
         }
+    });
+
+    Ok(MjpegPreviewServer {
+        base_url: format!("http://127.0.0.1:{port}"),
+        handle: Some(handle),
+        stop,
+    })
+}
+
+fn serve_mjpeg_client(
+    mut stream: TcpStream,
+    frame_sources: Vec<PlaybackFrameSource>,
+    stop: Arc<AtomicBool>,
+) {
+    let _ = stream.set_read_timeout(Some(Duration::from_millis(500)));
+    let mut buffer = [0u8; 1024];
+    let read_len = stream.read(&mut buffer).unwrap_or(0);
+    let request = String::from_utf8_lossy(&buffer[..read_len]);
+    let stream_id = request
+        .lines()
+        .next()
+        .and_then(|line| line.split_whitespace().nth(1))
+        .and_then(|path| path.trim_start_matches('/').strip_suffix(".mjpeg"))
+        .map(ToOwned::to_owned);
+    let Some(stream_id) = stream_id else {
+        let _ = stream.write_all(b"HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\n\r\n");
+        return;
+    };
+    let Some(frame_source) = frame_sources
+        .into_iter()
+        .find(|source| source.stream_id == stream_id)
+    else {
+        let _ = stream.write_all(b"HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\n\r\n");
+        return;
     };
 
+    if stream
+        .write_all(
+            b"HTTP/1.1 200 OK\r\nContent-Type: multipart/x-mixed-replace; boundary=frame\r\nCache-Control: no-cache, no-store, must-revalidate\r\nPragma: no-cache\r\nConnection: close\r\nAccess-Control-Allow-Origin: *\r\n\r\n",
+        )
+        .is_err()
+    {
+        return;
+    }
+
+    let mut last_sent: Option<SystemTime> = None;
+    while !stop.load(Ordering::Relaxed) {
+        match latest_preview_frame_path(&frame_source) {
+            Ok(Some((path, modified))) if last_sent.is_none_or(|previous| modified > previous) => {
+                match fs::read(path) {
+                    Ok(bytes) => {
+                        let header = format!(
+                            "--frame\r\nContent-Type: image/jpeg\r\nContent-Length: {}\r\n\r\n",
+                            bytes.len()
+                        );
+                        if stream.write_all(header.as_bytes()).is_err()
+                            || stream.write_all(&bytes).is_err()
+                            || stream.write_all(b"\r\n").is_err()
+                            || stream.flush().is_err()
+                        {
+                            return;
+                        }
+                        last_sent = Some(modified);
+                    }
+                    Err(_) => thread::sleep(Duration::from_millis(40)),
+                }
+            }
+            _ => thread::sleep(Duration::from_millis(40)),
+        }
+    }
+}
+
+fn latest_preview_frame_path(
+    frame_source: &PlaybackFrameSource,
+) -> Result<Option<(PathBuf, SystemTime)>, String> {
+    let prefix = safe_stream_file_prefix(&frame_source.stream_id);
+    let entries = fs::read_dir(&frame_source.folder)
+        .map_err(|error| format!("Preview frame 폴더를 읽지 못했습니다: {error}"))?;
     let mut latest: Option<(PathBuf, SystemTime)> = None;
     for entry in entries.flatten() {
         let path = entry.path();
@@ -1897,15 +2126,52 @@ fn latest_playback_frame(frame_source: &PlaybackFrameSource) -> PlaybackFrameRes
         }
     }
 
+    Ok(latest)
+}
+
+fn latest_playback_frame(frame_source: &PlaybackFrameSource) -> PlaybackFrameResponse {
+    let latest = match latest_preview_frame_path(frame_source) {
+        Ok(latest) => latest,
+        Err(error) => {
+            return PlaybackFrameResponse {
+                stream_id: frame_source.stream_id.clone(),
+                available: false,
+                data_url: None,
+                stream_url: frame_source.stream_url.clone(),
+                updated_at_millis: None,
+                diagnostic: Some(error),
+            };
+        }
+    };
+
     let Some((path, modified)) = latest else {
         return PlaybackFrameResponse {
             stream_id: frame_source.stream_id.clone(),
-            available: false,
+            available: frame_source.stream_url.is_some(),
             data_url: None,
+            stream_url: frame_source.stream_url.clone(),
             updated_at_millis: None,
-            diagnostic: Some("아직 수신된 preview frame이 없습니다.".to_string()),
+            diagnostic: Some(
+                "Playback 프로세스는 실행 중입니다. 첫 preview frame을 기다리는 중입니다."
+                    .to_string(),
+            ),
         };
     };
+
+    let updated_at_millis = modified
+        .duration_since(UNIX_EPOCH)
+        .ok()
+        .and_then(|duration| u64::try_from(duration.as_millis()).ok());
+    if frame_source.stream_url.is_some() {
+        return PlaybackFrameResponse {
+            stream_id: frame_source.stream_id.clone(),
+            available: true,
+            data_url: None,
+            stream_url: frame_source.stream_url.clone(),
+            updated_at_millis,
+            diagnostic: None,
+        };
+    }
 
     let bytes = match fs::read(&path) {
         Ok(bytes) => bytes,
@@ -1914,15 +2180,12 @@ fn latest_playback_frame(frame_source: &PlaybackFrameSource) -> PlaybackFrameRes
                 stream_id: frame_source.stream_id.clone(),
                 available: false,
                 data_url: None,
+                stream_url: None,
                 updated_at_millis: None,
                 diagnostic: Some(format!("Preview frame을 읽지 못했습니다: {error}")),
             };
         }
     };
-    let updated_at_millis = modified
-        .duration_since(UNIX_EPOCH)
-        .ok()
-        .and_then(|duration| u64::try_from(duration.as_millis()).ok());
 
     PlaybackFrameResponse {
         stream_id: frame_source.stream_id.clone(),
@@ -1931,6 +2194,7 @@ fn latest_playback_frame(frame_source: &PlaybackFrameSource) -> PlaybackFrameRes
             "data:image/jpeg;base64,{}",
             general_purpose::STANDARD.encode(bytes)
         )),
+        stream_url: None,
         updated_at_millis,
         diagnostic: None,
     }
@@ -2044,7 +2308,9 @@ fn extract_rtp_candidates(raw_text: &str) -> Vec<RtpCandidate> {
             }
         }
 
-        let Some(caps) = find_nearest_rtp_caps_before(&tokens, index) else {
+        let Some(caps) = find_nearest_rtp_caps_before(&tokens, index)
+            .or_else(|| infer_rtp_caps_from_payloader_before(&tokens, index))
+        else {
             index = cursor.saturating_add(1);
             continue;
         };
@@ -2077,6 +2343,74 @@ fn find_nearest_rtp_caps_before(tokens: &[String], index: usize) -> Option<Strin
         if token.contains("application/x-rtp") {
             return Some(token.trim_matches('"').to_string());
         }
+    }
+
+    None
+}
+
+fn infer_rtp_caps_from_payloader_before(tokens: &[String], index: usize) -> Option<String> {
+    let mut cursor = index;
+    while cursor > 0 {
+        cursor -= 1;
+        let token = &tokens[cursor];
+        if token == "udpsrc" || token == "udpsink" || token == "rtspsrc" {
+            return None;
+        }
+        let factory = token.trim();
+        let payload = find_payloader_payload(tokens, cursor, index).unwrap_or_else(|| "96".into());
+        let caps = match factory {
+            "rtph264pay" => {
+                format!(
+                    "application/x-rtp,media=video,encoding-name=H264,payload={payload},clock-rate=90000"
+                )
+            }
+            "rtph265pay" | "rtphevcpay" => {
+                format!(
+                    "application/x-rtp,media=video,encoding-name=H265,payload={payload},clock-rate=90000"
+                )
+            }
+            "rtpjpegpay" => {
+                format!(
+                    "application/x-rtp,media=video,encoding-name=JPEG,payload={payload},clock-rate=90000"
+                )
+            }
+            "rtpvrawpay" => {
+                format!(
+                    "application/x-rtp,media=video,encoding-name=RAW,payload={payload},clock-rate=90000"
+                )
+            }
+            "rtpopuspay" => {
+                format!(
+                    "application/x-rtp,media=audio,encoding-name=OPUS,payload={payload},clock-rate=48000"
+                )
+            }
+            "rtpmp4gpay" => {
+                format!(
+                    "application/x-rtp,media=audio,encoding-name=MPEG4-GENERIC,payload={payload},clock-rate=48000"
+                )
+            }
+            _ => continue,
+        };
+
+        return Some(caps);
+    }
+
+    None
+}
+
+fn find_payloader_payload(
+    tokens: &[String],
+    payloader_index: usize,
+    sink_index: usize,
+) -> Option<String> {
+    let mut cursor = payloader_index + 1;
+    while cursor < sink_index && tokens[cursor] != "!" {
+        if let Some(value) = parse_token_value(&tokens[cursor], "pt")
+            .or_else(|| parse_token_value(&tokens[cursor], "payload"))
+        {
+            return Some(value);
+        }
+        cursor += 1;
     }
 
     None
@@ -3017,6 +3351,36 @@ Element Properties:
         assert!(!streams[0]
             .playback_pipeline
             .contains("! decodebin ! autovideosink"));
+    }
+
+    #[test]
+    fn playback_detection_infers_h264_caps_from_sender_payloader() {
+        let raw_text = "qtiqmmfsrc camera=0 name=eocam0 ! video/x-raw(memory:GBM),format=NV12,framerate=30/1,width=1920,height=1080 ! qtic2venc name=eo_venc control-rate=2 idr-interval=60 target-bitrate=3000000 ! h264parse config-interval=-1 ! tee name=eoenc ! rtph264pay mtu=1350 config-interval=1 name=pay0 pt=96 ! udpsink host=192.168.100.112 port=15000";
+        let streams = detect_playback_streams(raw_text);
+
+        assert_eq!(streams.len(), 1);
+        assert_eq!(streams[0].direction, PlaybackDirection::Sender);
+        assert_eq!(streams[0].media_kind, PlaybackMediaKind::Video);
+        assert_eq!(streams[0].port, Some(15000));
+        assert!(streams[0]
+            .caps
+            .as_deref()
+            .is_some_and(|caps| caps.contains("encoding-name=(string)H264")));
+        assert!(streams[0]
+            .caps
+            .as_deref()
+            .is_some_and(|caps| caps.contains("payload=(int)96")));
+
+        let plan = build_playback_plan(raw_text, None, Some(Path::new("/tmp/gst-preview")));
+        assert!(plan.playable);
+        assert!(plan
+            .counterpart_pipeline
+            .as_deref()
+            .is_some_and(|pipeline| pipeline.contains("rtph264depay ! h264parse ! decodebin")));
+        assert!(plan
+            .counterpart_pipeline
+            .as_deref()
+            .is_some_and(|pipeline| pipeline.contains("framerate=24/1")));
     }
 
     #[test]

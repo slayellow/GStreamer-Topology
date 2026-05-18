@@ -303,7 +303,14 @@ function WorkspaceShell({
     }
 
     let isCancelled = false
+    let isPollingSlowly = false
+    let requestInFlight = false
+    let timerId: number | undefined
     const loadFrames = () => {
+      if (requestInFlight) {
+        return
+      }
+      requestInFlight = true
       Promise.all(previewStreams.map((stream) => getLocalPlaybackFrame(stream.id)))
         .then((frames) => {
           if (isCancelled) {
@@ -319,18 +326,34 @@ function WorkspaceShell({
               current.frames,
             ),
           }))
+          if (
+            !isPollingSlowly &&
+            frames.length === previewStreams.length &&
+            frames.every((frame) => Boolean(frame.stream_url))
+          ) {
+            isPollingSlowly = true
+            if (timerId) {
+              window.clearInterval(timerId)
+            }
+            timerId = window.setInterval(loadFrames, 1000)
+          }
         })
         .catch((error) => {
           console.error(error)
         })
+        .finally(() => {
+          requestInFlight = false
+        })
     }
 
     loadFrames()
-    const timerId = window.setInterval(loadFrames, 120)
+    timerId = window.setInterval(loadFrames, 120)
 
     return () => {
       isCancelled = true
-      window.clearInterval(timerId)
+      if (timerId) {
+        window.clearInterval(timerId)
+      }
     }
   }, [isPlaybackOpen, playbackState.prepareResult, playbackState.status.state])
 
